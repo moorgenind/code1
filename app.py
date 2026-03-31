@@ -11,38 +11,22 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from fastapi import FastAPI
-from pydantic import BaseModel
 
-app = FastAPI()
-
-
-class UserRequest(BaseModel):
-    user_name: str = "Moorgen User"
-
-
-@app.post("/process-leads")
-def process_leads_api(req: UserRequest):
-    result = process_all_pending_leads(user_name=req.user_name)
-    return result
-
-
-@app.post("/process-post-leads")
-def process_post_leads_api(req: UserRequest):
-    result = process_all_post_lead_actions(user_name=req.user_name)
-    return result
 # =========================================
 # CONFIG
 # =========================================
 SPREADSHEET_NAME = "Moorgen_CRM"
-OAUTH_FILE = "oauth_credentials.json"
-TOKEN_FILE = "token.pickle"
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+OAUTH_FILE = os.path.join(BASE_DIR, "oauth_credentials.json")
+TOKEN_FILE = os.path.join(BASE_DIR, "token.pickle")
 
 LEADS_SHEET_NAME = "Leads"
 COUNTERS_SHEET_NAME = "Counters"
 ACTIVITY_LOG_SHEET_NAME = "Activity_Log"
 DESIGN_TASKS_SHEET_NAME = "Design_Tasks"
 BOQ_QUEUE_SHEET_NAME = "BOQ_Request_Queue"
+PROJECTS_SHEET_NAME = "Projects"
 
 TIMEZONE = "Asia/Kolkata"
 
@@ -54,8 +38,8 @@ SCOPES = [
 DEFAULT_STAGE = "New_Enquiry"
 DEFAULT_NEXT_ACTION = "Gather Requirements"
 
-# Replace this with your real Drive parent folder ID
-LEADS_PARENT_FOLDER_ID = "1jjZK0PPOyHfCFmSY9CWcxr8eoDsfaIR2"
+# Replace with your actual Drive folder ID
+LEADS_PARENT_FOLDER_ID = "YOUR_REAL_DRIVE_FOLDER_ID_HERE"
 
 REQUIRED_FIELDS = [
     "Client_Name",
@@ -106,6 +90,7 @@ counters_ws = spreadsheet.worksheet(COUNTERS_SHEET_NAME)
 activity_log_ws = spreadsheet.worksheet(ACTIVITY_LOG_SHEET_NAME)
 design_tasks_ws = spreadsheet.worksheet(DESIGN_TASKS_SHEET_NAME)
 boq_queue_ws = spreadsheet.worksheet(BOQ_QUEUE_SHEET_NAME)
+projects_ws = spreadsheet.worksheet(PROJECTS_SHEET_NAME)
 
 drive_service = build("drive", "v3", credentials=creds)
 
@@ -149,37 +134,8 @@ def slugify(text: Any) -> str:
 # =========================================
 # SHEET HELPERS
 # =========================================
-
-# Module-level header cache: { worksheet_title -> [header, ...] }
-# Populated on first access; cleared at the start of each bulk run so
-# schema changes are always picked up on the next invocation.
-_headers_cache: Dict[str, List[str]] = {}
-
-
-def invalidate_headers_cache(ws=None) -> None:
-    """Clear cached headers.
-
-    Pass a specific worksheet to evict only that sheet, or call with no
-    argument to flush the entire cache (e.g. after a schema change).
-    """
-    if ws is None:
-        _headers_cache.clear()
-    else:
-        _headers_cache.pop(ws.title, None)
-
-
 def get_headers(ws) -> List[str]:
-    """Return the cleaned header row for *ws*, using the in-process cache.
-
-    The first call for a given worksheet fetches row 1 from the API and
-    stores the result.  Every subsequent call within the same process
-    returns the cached list without touching the API, eliminating the
-    dominant source of quota-exhausting read requests.
-    """
-    key = ws.title
-    if key not in _headers_cache:
-        _headers_cache[key] = [clean_header(h) for h in ws.row_values(1)]
-    return _headers_cache[key]
+    return [clean_header(h) for h in ws.row_values(1)]
 
 def get_column_index_map(ws) -> Dict[str, int]:
     headers = get_headers(ws)
@@ -198,15 +154,12 @@ def update_row_fields(ws, row_number: int, updates: Dict[str, Any]):
     for field, value in updates.items():
         if field not in col_map:
             raise ValueError(f"Column '{field}' not found in sheet '{ws.title}'")
-        from gspread import Cell
-        cells_to_update.append(Cell(row_number, col_map[field], value))
-
-        
+        cell = ws.cell(row_number, col_map[field])
+        cell.value = value
+        cells_to_update.append(cell)
 
     if cells_to_update:
         ws.update_cells(cells_to_update, value_input_option="USER_ENTERED")
-
-
 
 
 # =========================================
@@ -252,7 +205,7 @@ def write_log(
     record_id: str,
     status: str,
     message: str,
-    error_details: str = ""
+    error_details: str = "",
 ):
     log_id = generate_next_id(entity="Log", prefix="LOG")
 
@@ -268,7 +221,7 @@ def write_log(
             message,
             error_details,
         ],
-        value_input_option="USER_ENTERED"
+        value_input_option="USER_ENTERED",
     )
 
 
@@ -555,15 +508,25 @@ def create_design_tasks_from_lead(row_number: int, user_name: str = "Moorgen Use
                 "",
                 safe_str(row_data.get("Notes")),
             ],
-            value_input_option="USER_ENTERED"
+            value_input_option="USER_ENTERED",
         )
 
         created_ids.append(design_id)
 
+    boq_required = is_yes(row_data.get("BOQ_Required"))
+
+    if boq_required:
+        current_stage = "Design_And_BOQ_Requested"
+        next_action = "Start Design and Process BOQ Queue"
+    else:
+        current_stage = "Design_Requested"
+        next_action = "Start Design Work"
+
     update_row_fields(leads_ws, row_number, {
         "Design_Status": "Pending",
         "Latest_Design_ID": ", ".join(created_ids),
-        "Current_Stage": "Design_Requested",
+        "Current_Stage": current_stage,
+        "Next_Action": next_action,
         "Last_Action_Time": current_timestamp_str(),
     })
 
@@ -581,48 +544,97 @@ def create_design_tasks_from_lead(row_number: int, user_name: str = "Moorgen Use
         "success": True,
         "lead_id": lead_id,
         "created_design_ids": created_ids,
+        "current_stage": current_stage,
+        "next_action": next_action,
     }
 
 
 # =========================================
 # BOQ
 # =========================================
+def get_boq_categories_from_lead(row_data: Dict[str, Any]) -> List[str]:
+    categories = []
+
+    if is_yes(row_data.get("Arch_Lighting")):
+        categories.append("Architectural Lighting")
+
+    if is_yes(row_data.get("Decorative_Lighting")):
+        categories.append("Decorative Lighting")
+
+    if is_yes(row_data.get("Automation_Required")):
+        categories.append("Automation")
+
+    return categories
+
 def create_boq_request_from_lead(row_number: int, user_name: str = "Moorgen User") -> Dict[str, Any]:
     row_data = get_row_dict_by_row_number(leads_ws, row_number)
 
     lead_id = safe_str(row_data.get("Lead_ID"))
     if not lead_id:
-        return {"success": False, "message": "Lead_ID missing. Create lead first."}
+        return {
+            "success": False,
+            "message": "Lead_ID missing. Create lead first."
+        }
 
     if not is_yes(row_data.get("BOQ_Required")):
-        return {"success": False, "message": "BOQ_Required is not Yes."}
+        return {
+            "success": False,
+            "message": "BOQ_Required is not Yes."
+        }
 
-    request_id = generate_next_id(entity="BOQRequest", prefix="BRQ")
+    boq_categories = get_boq_categories_from_lead(row_data)
+    if not boq_categories:
+        return {
+            "success": False,
+            "message": "No BOQ categories derived from this lead."
+        }
 
-    boq_queue_ws.append_row(
-        [
-            request_id,
-            lead_id,
-            safe_str(row_data.get("Client_Name")),
-            safe_str(row_data.get("Project_Name")),
-            safe_str(row_data.get("Project_Location")),
-            "Yes" if is_yes(row_data.get("Arch_Lighting")) else "No",
-            "Yes" if is_yes(row_data.get("Decorative_Lighting")) else "No",
-            "Yes" if is_yes(row_data.get("Automation_Required")) else "No",
-            user_name,
-            current_date_str(),
-            "Pending",
-            "",
-            "",
-            "",
-            safe_str(row_data.get("Notes")),
-        ],
-        value_input_option="USER_ENTERED"
-    )
+    created_request_ids = []
+
+    for category in boq_categories:
+        request_id = generate_next_id(entity="BOQRequest", prefix="BRQ")
+
+        scope_arch = "Yes" if category == "Architectural Lighting" else "No"
+        scope_decorative = "Yes" if category == "Decorative Lighting" else "No"
+        scope_automation = "Yes" if category == "Automation" else "No"
+
+        boq_queue_ws.append_row(
+            [
+                request_id,
+                lead_id,
+                safe_str(row_data.get("Client_Name")),
+                safe_str(row_data.get("Project_Name")),
+                safe_str(row_data.get("Project_Location")),
+                scope_arch,
+                scope_decorative,
+                scope_automation,
+                user_name,
+                current_date_str(),
+                "Pending",
+                "",
+                "",
+                "",
+                safe_str(row_data.get("Notes")),
+            ],
+            value_input_option="USER_ENTERED",
+        )
+
+        created_request_ids.append(request_id)
+
+    design_required = is_yes(row_data.get("Design_Required"))
+
+    if design_required:
+        current_stage = "Design_And_BOQ_Requested"
+        next_action = "Start Design and Process BOQ Queue"
+    else:
+        current_stage = "BOQ_Requested"
+        next_action = "Process BOQ Queue"
 
     update_row_fields(leads_ws, row_number, {
         "BOQ_Status": "Pending",
-        "Current_Stage": "BOQ_Requested",
+        "Latest_BOQ_ID": ", ".join(created_request_ids),
+        "Current_Stage": current_stage,
+        "Next_Action": next_action,
         "Last_Action_Time": current_timestamp_str(),
     })
 
@@ -632,14 +644,102 @@ def create_boq_request_from_lead(row_number: int, user_name: str = "Moorgen User
         record_type="Lead",
         record_id=lead_id,
         status="Success",
-        message=f"Created BOQ request {request_id}",
+        message=f"Created {len(created_request_ids)} BOQ request(s)",
         error_details="",
     )
 
     return {
         "success": True,
         "lead_id": lead_id,
-        "request_id": request_id,
+        "request_ids": created_request_ids,
+        "categories": boq_categories,
+        "current_stage": current_stage,
+        "next_action": next_action,
+    }
+
+
+# =========================================
+# ORDER CONFIRMATION / PROJECTS
+# =========================================
+def confirm_order_from_lead(row_number: int, user_name: str = "Moorgen User") -> Dict[str, Any]:
+    row_data = get_row_dict_by_row_number(leads_ws, row_number)
+
+    lead_id = safe_str(row_data.get("Lead_ID"))
+    if not lead_id:
+        return {
+            "success": False,
+            "message": "Lead_ID missing. Create lead first."
+        }
+
+    if not is_yes(row_data.get("Order_Confirmed")):
+        return {
+            "success": False,
+            "message": "Order_Confirmed is not Yes."
+        }
+
+    existing_project_id = safe_str(row_data.get("Project_ID"))
+    if existing_project_id:
+        return {
+            "success": False,
+            "message": f"Project already exists: {existing_project_id}"
+        }
+
+    project_id = generate_next_id(entity="Project", prefix="PRJ")
+
+    advance_required = is_yes(row_data.get("Advance_Required"))
+    advance_status = safe_str(row_data.get("Advance_Status"))
+    if not advance_status:
+        advance_status = "Pending" if advance_required else "Not Required"
+
+    order_confirmed_date = safe_str(row_data.get("Order_Confirmed_Date")) or current_date_str()
+
+    projects_ws.append_row(
+        [
+            project_id,
+            lead_id,
+            safe_str(row_data.get("Client_Name")),
+            safe_str(row_data.get("Project_Name")),
+            safe_str(row_data.get("Project_Location")),
+            safe_str(row_data.get("Assigned_Sales")),
+            order_confirmed_date,
+            advance_status,
+            safe_str(row_data.get("Advance_Amount")),
+            "Order Confirmed",
+            safe_str(row_data.get("Drive_Folder_Link")),
+            safe_str(row_data.get("Notes")),
+        ],
+        value_input_option="USER_ENTERED",
+    )
+
+    current_stage = "Order_Confirmed"
+    next_action = "Collect Advance" if advance_required else "Start Project Planning"
+
+    update_row_fields(leads_ws, row_number, {
+        "Project_ID": project_id,
+        "Order_Confirmed_Date": order_confirmed_date,
+        "Order_Confirmed_By": user_name,
+        "Advance_Status": advance_status,
+        "Current_Stage": current_stage,
+        "Next_Action": next_action,
+        "Last_Action_Time": current_timestamp_str(),
+    })
+
+    write_log(
+        user=user_name,
+        action="Confirm Order",
+        record_type="Lead",
+        record_id=lead_id,
+        status="Success",
+        message=f"Order confirmed and project created: {project_id}",
+        error_details="",
+    )
+
+    return {
+        "success": True,
+        "lead_id": lead_id,
+        "project_id": project_id,
+        "current_stage": current_stage,
+        "next_action": next_action,
     }
 
 
@@ -690,15 +790,11 @@ def should_process_lead(row_data: Dict[str, Any]) -> bool:
     return True
 
 def process_all_pending_leads(user_name: str = "Moorgen Auto") -> Dict[str, Any]:
-    # Flush the header cache so any schema changes made since the last run
-    # are picked up immediately rather than served from a stale cache.
-    invalidate_headers_cache()
     all_values = leads_ws.get_all_values()
 
     processed = 0
     failed = 0
     results = []
-
 
     for row_number in range(2, len(all_values) + 1):
         row_data = get_row_dict_by_row_number(leads_ws, row_number)
@@ -722,14 +818,10 @@ def process_all_pending_leads(user_name: str = "Moorgen Auto") -> Dict[str, Any]
     }
 
 def process_all_post_lead_actions(user_name: str = "Moorgen Auto") -> Dict[str, Any]:
-    # Flush the header cache so any schema changes made since the last run
-    # are picked up immediately rather than served from a stale cache.
-    invalidate_headers_cache()
     all_values = leads_ws.get_all_values()
 
     processed = 0
     results = []
-
 
     for row_number in range(2, len(all_values) + 1):
         row_data = get_row_dict_by_row_number(leads_ws, row_number)
@@ -753,6 +845,40 @@ def process_all_post_lead_actions(user_name: str = "Moorgen Auto") -> Dict[str, 
         "results": results,
     }
 
+def process_all_order_confirmations(user_name: str = "Moorgen Auto") -> Dict[str, Any]:
+    all_values = leads_ws.get_all_values()
+
+    processed = 0
+    failed = 0
+    results = []
+
+    for row_number in range(2, len(all_values) + 1):
+        row_data = get_row_dict_by_row_number(leads_ws, row_number)
+
+        if not safe_str(row_data.get("Lead_ID")):
+            continue
+
+        if not is_yes(row_data.get("Order_Confirmed")):
+            continue
+
+        if safe_str(row_data.get("Project_ID")):
+            continue
+
+        result = confirm_order_from_lead(row_number=row_number, user_name=user_name)
+        results.append(result)
+
+        if result["success"]:
+            processed += 1
+        else:
+            failed += 1
+
+    return {
+        "success": True,
+        "processed": processed,
+        "failed": failed,
+        "results": results,
+    }
+
 
 # =========================================
 # MAIN
@@ -760,13 +886,17 @@ def process_all_post_lead_actions(user_name: str = "Moorgen Auto") -> Dict[str, 
 if __name__ == "__main__":
     print("1. Process pending leads")
     print("2. Process post-lead actions")
-    choice = input("Enter choice (1 or 2): ").strip()
+    print("3. Process order confirmations")
+    choice = input("Enter choice (1, 2 or 3): ").strip()
 
     if choice == "1":
         output = process_all_pending_leads(user_name="Moorgen Auto")
         print(output)
     elif choice == "2":
         output = process_all_post_lead_actions(user_name="Moorgen Auto")
+        print(output)
+    elif choice == "3":
+        output = process_all_order_confirmations(user_name="Moorgen Auto")
         print(output)
     else:
         print("Invalid choice")
