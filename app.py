@@ -149,8 +149,37 @@ def slugify(text: Any) -> str:
 # =========================================
 # SHEET HELPERS
 # =========================================
+
+# Module-level header cache: { worksheet_title -> [header, ...] }
+# Populated on first access; cleared at the start of each bulk run so
+# schema changes are always picked up on the next invocation.
+_headers_cache: Dict[str, List[str]] = {}
+
+
+def invalidate_headers_cache(ws=None) -> None:
+    """Clear cached headers.
+
+    Pass a specific worksheet to evict only that sheet, or call with no
+    argument to flush the entire cache (e.g. after a schema change).
+    """
+    if ws is None:
+        _headers_cache.clear()
+    else:
+        _headers_cache.pop(ws.title, None)
+
+
 def get_headers(ws) -> List[str]:
-    return [clean_header(h) for h in ws.row_values(1)]
+    """Return the cleaned header row for *ws*, using the in-process cache.
+
+    The first call for a given worksheet fetches row 1 from the API and
+    stores the result.  Every subsequent call within the same process
+    returns the cached list without touching the API, eliminating the
+    dominant source of quota-exhausting read requests.
+    """
+    key = ws.title
+    if key not in _headers_cache:
+        _headers_cache[key] = [clean_header(h) for h in ws.row_values(1)]
+    return _headers_cache[key]
 
 def get_column_index_map(ws) -> Dict[str, int]:
     headers = get_headers(ws)
@@ -175,6 +204,8 @@ def update_row_fields(ws, row_number: int, updates: Dict[str, Any]):
 
     if cells_to_update:
         ws.update_cells(cells_to_update, value_input_option="USER_ENTERED")
+
+
 
 
 # =========================================
@@ -658,11 +689,15 @@ def should_process_lead(row_data: Dict[str, Any]) -> bool:
     return True
 
 def process_all_pending_leads(user_name: str = "Moorgen Auto") -> Dict[str, Any]:
+    # Flush the header cache so any schema changes made since the last run
+    # are picked up immediately rather than served from a stale cache.
+    invalidate_headers_cache()
     all_values = leads_ws.get_all_values()
 
     processed = 0
     failed = 0
     results = []
+
 
     for row_number in range(2, len(all_values) + 1):
         row_data = get_row_dict_by_row_number(leads_ws, row_number)
@@ -686,10 +721,14 @@ def process_all_pending_leads(user_name: str = "Moorgen Auto") -> Dict[str, Any]
     }
 
 def process_all_post_lead_actions(user_name: str = "Moorgen Auto") -> Dict[str, Any]:
+    # Flush the header cache so any schema changes made since the last run
+    # are picked up immediately rather than served from a stale cache.
+    invalidate_headers_cache()
     all_values = leads_ws.get_all_values()
 
     processed = 0
     results = []
+
 
     for row_number in range(2, len(all_values) + 1):
         row_data = get_row_dict_by_row_number(leads_ws, row_number)
