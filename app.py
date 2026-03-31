@@ -6,6 +6,8 @@ from typing import Dict, Any, Optional, List
 
 import gspread
 from dateutil import tz
+from fastapi import FastAPI
+from pydantic import BaseModel
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
@@ -38,7 +40,7 @@ SCOPES = [
 DEFAULT_STAGE = "New_Enquiry"
 DEFAULT_NEXT_ACTION = "Gather Requirements"
 
-# Replace with your actual Drive folder ID
+# REPLACE THIS
 LEADS_PARENT_FOLDER_ID = "YOUR_REAL_DRIVE_FOLDER_ID_HERE"
 
 REQUIRED_FIELDS = [
@@ -56,6 +58,16 @@ SCOPE_FIELDS = [
     "Mechanical_Keypads_Required",
     "Smart_Lock_Required",
 ]
+
+
+# =========================================
+# FASTAPI
+# =========================================
+app = FastAPI()
+
+
+class UserRequest(BaseModel):
+    user_name: str = "Moorgen User"
 
 
 # =========================================
@@ -879,63 +891,35 @@ def process_all_order_confirmations(user_name: str = "Moorgen Auto") -> Dict[str
         "results": results,
     }
 
-from fastapi import FastAPI
-from pydantic import BaseModel
 
-from workflow_automation import (
-    process_all_pending_leads,
-    process_all_post_lead_actions,
-    process_all_order_confirmations,
-)
-
-app = FastAPI()
-
-
-class UserRequest(BaseModel):
-    user_name: str = "Moorgen User"
-
+# =========================================
+# API ROUTES
+# =========================================
+@app.get("/")
+def root():
+    return {"message": "Moorgen backend is running"}
 
 @app.get("/health")
 def health():
     return {"ok": True}
 
-
-@app.get("/")
-def root():
-    return {"message": "Moorgen backend is running"}
-
-
 @app.post("/process-leads")
 def process_leads(req: UserRequest):
-    return process_all_pending_leads(user_name=req.user_name)
-
+    try:
+        return process_all_pending_leads(user_name=req.user_name)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 @app.post("/process-post-leads")
 def process_post_leads(req: UserRequest):
-    return process_all_post_lead_actions(user_name=req.user_name)
-
+    try:
+        return process_all_post_lead_actions(user_name=req.user_name)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 @app.post("/process-order-confirmations")
 def process_order_confirmations(req: UserRequest):
-    return process_all_order_confirmations(user_name=req.user_name)
-
-# =========================================
-# MAIN
-# =========================================
-if __name__ == "__main__":
-    print("1. Process pending leads")
-    print("2. Process post-lead actions")
-    print("3. Process order confirmations")
-    choice = input("Enter choice (1, 2 or 3): ").strip()
-
-    if choice == "1":
-        output = process_all_pending_leads(user_name="Moorgen Auto")
-        print(output)
-    elif choice == "2":
-        output = process_all_post_lead_actions(user_name="Moorgen Auto")
-        print(output)
-    elif choice == "3":
-        output = process_all_order_confirmations(user_name="Moorgen Auto")
-        print(output)
-    else:
-        print("Invalid choice")
+    try:
+        return process_all_order_confirmations(user_name=req.user_name)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
