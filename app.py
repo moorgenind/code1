@@ -198,9 +198,10 @@ def update_row_fields(ws, row_number: int, updates: Dict[str, Any]):
     for field, value in updates.items():
         if field not in col_map:
             raise ValueError(f"Column '{field}' not found in sheet '{ws.title}'")
-        cell = ws.cell(row_number, col_map[field])
-        cell.value = value
-        cells_to_update.append(cell)
+        from gspread import Cell
+        cells_to_update.append(Cell(row_number, col_map[field], value))
+
+        
 
     if cells_to_update:
         ws.update_cells(cells_to_update, value_input_option="USER_ENTERED")
