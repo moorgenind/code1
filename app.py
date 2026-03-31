@@ -879,6 +879,45 @@ def process_all_order_confirmations(user_name: str = "Moorgen Auto") -> Dict[str
         "results": results,
     }
 
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+from workflow_automation import (
+    process_all_pending_leads,
+    process_all_post_lead_actions,
+    process_all_order_confirmations,
+)
+
+app = FastAPI()
+
+
+class UserRequest(BaseModel):
+    user_name: str = "Moorgen User"
+
+
+@app.get("/health")
+def health():
+    return {"ok": True}
+
+
+@app.get("/")
+def root():
+    return {"message": "Moorgen backend is running"}
+
+
+@app.post("/process-leads")
+def process_leads(req: UserRequest):
+    return process_all_pending_leads(user_name=req.user_name)
+
+
+@app.post("/process-post-leads")
+def process_post_leads(req: UserRequest):
+    return process_all_post_lead_actions(user_name=req.user_name)
+
+
+@app.post("/process-order-confirmations")
+def process_order_confirmations(req: UserRequest):
+    return process_all_order_confirmations(user_name=req.user_name)
 
 # =========================================
 # MAIN
