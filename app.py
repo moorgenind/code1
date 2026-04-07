@@ -671,7 +671,6 @@ def create_boq_request_from_lead(row_number: int, user_name: str = "Moorgen User
         next_action = "Prepare Quote"
 
     update_row_fields(leads_ws, row_number, {
-        "BOQ_Status": "Pending",
         "Latest_BOQ_ID": ", ".join(created_request_ids),
         "Current_Stage": current_stage,
         "Next_Action": next_action,
@@ -797,7 +796,7 @@ def process_post_lead_actions(row_number: int, user_name: str = "Moorgen User") 
     if is_yes(row_data.get("Design_Required")) and not safe_str(row_data.get("Latest_Design_ID")):
         results["design"] = create_design_tasks_from_lead(row_number, user_name=user_name)
 
-    if safe_str(row_data.get("BOQ_Status")).lower() not in {"pending", "generated"}:
+    if not safe_str(row_data.get("Latest_BOQ_ID")):
         results["boq"] = create_boq_request_from_lead(row_number, user_name=user_name)
 
     return results
@@ -892,7 +891,7 @@ def process_all_post_lead_actions(user_name: str = "Moorgen Auto") -> Dict[str, 
             continue
 
         needs_design = is_yes(row_data.get("Design_Required")) and not safe_str(row_data.get("Latest_Design_ID"))
-        needs_boq = safe_str(row_data.get("BOQ_Status")).lower() not in {"pending", "generated"}
+        needs_boq = not safe_str(row_data.get("Latest_BOQ_ID"))
 
         if not needs_design and not needs_boq:
             continue
