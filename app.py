@@ -11,7 +11,6 @@ from pydantic import BaseModel
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 
 
 # =========================================
@@ -356,7 +355,7 @@ def create_lead_folder_structure(
 
 
 # =========================================
-# LEAD STAGE HELPERS
+# LEAD STATUS GATE
 # =========================================
 def is_row_allowed_for_processing(row_data: Dict[str, Any]) -> bool:
     lead_status = safe_str(row_data.get("Lead Status")).lower()
@@ -804,6 +803,30 @@ def process_post_lead_actions(row_number: int, user_name: str = "Moorgen User") 
     return results
 
 
+def process_single_post_lead_row(row_number: int, user_name: str = "Moorgen User") -> Dict[str, Any]:
+    row_data = get_row_dict_by_row_number(leads_ws, row_number)
+
+    if not row_data:
+        return {
+            "success": False,
+            "message": f"Row {row_number} could not be read."
+        }
+
+    if not safe_str(row_data.get("Lead_ID")):
+        return {
+            "success": False,
+            "message": "Lead_ID missing. Process the lead first."
+        }
+
+    if not is_row_allowed_for_processing(row_data):
+        return {
+            "success": False,
+            "message": "Lead Status must be 'Next Steps' to process this row."
+        }
+
+    return process_post_lead_actions(row_number=row_number, user_name=user_name)
+
+
 # =========================================
 # BULK PROCESSORS
 # =========================================
@@ -959,6 +982,17 @@ def process_lead_row(req: RowRequest):
 def process_post_leads(req: UserRequest):
     try:
         return process_all_post_lead_actions(user_name=req.user_name)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/process-post-lead-row")
+def process_post_lead_row(req: RowRequest):
+    try:
+        return process_single_post_lead_row(
+            row_number=req.row_number,
+            user_name=req.user_name
+        )
     except Exception as e:
         return {"success": False, "error": str(e)}
 
