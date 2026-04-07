@@ -40,7 +40,7 @@ SCOPES = [
 DEFAULT_STAGE = "New_Enquiry"
 DEFAULT_NEXT_ACTION = "Gather Requirements"
 
-# REPLACE THIS
+# REPLACE THIS WITH YOUR REAL DRIVE FOLDER ID
 LEADS_PARENT_FOLDER_ID = "1jjZK0PPOyHfCFmSY9CWcxr8eoDsfaIR2"
 
 REQUIRED_FIELDS = [
@@ -68,6 +68,11 @@ app = FastAPI()
 
 class UserRequest(BaseModel):
     user_name: str = "Moorgen User"
+
+
+class RowRequest(BaseModel):
+    user_name: str = "Moorgen User"
+    row_number: int
 
 
 # =========================================
@@ -464,6 +469,23 @@ def create_lead_record(row_number: int, user_name: str = "Moorgen User") -> Dict
             "row_number": row_number,
             "errors": [error_text],
         }
+
+def process_single_lead_row(row_number: int, user_name: str = "Moorgen User") -> Dict[str, Any]:
+    row_data = get_row_dict_by_row_number(leads_ws, row_number)
+
+    if not row_data:
+        return {
+            "success": False,
+            "message": f"Row {row_number} could not be read."
+        }
+
+    if safe_str(row_data.get("Lead_ID")):
+        return {
+            "success": False,
+            "message": f"Row {row_number} already has Lead_ID: {row_data.get('Lead_ID')}"
+        }
+
+    return create_lead_record(row_number=row_number, user_name=user_name)
 
 
 # =========================================
@@ -907,6 +929,16 @@ def health():
 def process_leads(req: UserRequest):
     try:
         return process_all_pending_leads(user_name=req.user_name)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@app.post("/process-lead-row")
+def process_lead_row(req: RowRequest):
+    try:
+        return process_single_lead_row(
+            row_number=req.row_number,
+            user_name=req.user_name
+        )
     except Exception as e:
         return {"success": False, "error": str(e)}
 
