@@ -13,6 +13,7 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+
 # =========================================
 # CONFIG
 # =========================================
@@ -36,10 +37,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 
-DEFAULT_STAGE = "New_Enquiry"
-DEFAULT_NEXT_ACTION = "Gather Requirements"
-
-# REPLACE THIS WITH YOUR REAL DRIVE FOLDER ID
+# Replace with your actual Drive parent folder ID
 LEADS_PARENT_FOLDER_ID = "1jjZK0PPOyHfCFmSY9CWcxr8eoDsfaIR2"
 
 REQUIRED_FIELDS = [
@@ -117,17 +115,18 @@ drive_service = build("drive", "v3", credentials=creds)
 def now_ist() -> datetime:
     return datetime.now(tz=tz.gettz(TIMEZONE))
 
+
 def current_date_str() -> str:
     return now_ist().strftime("%d/%m/%Y")
 
-def current_timestamp_str() -> str:
-    return now_ist().strftime("%d/%m/%Y %H:%M:%S")
 
 def current_year() -> int:
     return now_ist().year
 
+
 def safe_str(value: Any) -> str:
     return "" if value is None else str(value).strip()
+
 
 def normalize_yes_no(value: Any) -> bool:
     if value is None:
@@ -135,11 +134,14 @@ def normalize_yes_no(value: Any) -> bool:
     value = str(value).strip().lower()
     return value in {"yes", "y", "true", "1", "checked", "tick"}
 
+
 def is_yes(value: Any) -> bool:
     return normalize_yes_no(value)
 
+
 def clean_header(header: str) -> str:
     return str(header).strip()
+
 
 def slugify(text: Any) -> str:
     text = safe_str(text)
@@ -153,15 +155,18 @@ def slugify(text: Any) -> str:
 def get_headers(ws) -> List[str]:
     return [clean_header(h) for h in ws.row_values(1)]
 
+
 def get_column_index_map(ws) -> Dict[str, int]:
     headers = get_headers(ws)
     return {header: idx + 1 for idx, header in enumerate(headers)}
+
 
 def get_row_dict_by_row_number(ws, row_number: int) -> Dict[str, Any]:
     headers = get_headers(ws)
     row_values = ws.row_values(row_number)
     row_values += [""] * (len(headers) - len(row_values))
     return dict(zip(headers, row_values))
+
 
 def update_row_fields(ws, row_number: int, updates: Dict[str, Any]):
     col_map = get_column_index_map(ws)
@@ -188,6 +193,7 @@ def find_counter_row(entity: str, year: int) -> Optional[int]:
             return idx
     return None
 
+
 def ensure_counter_row(entity: str, year: int, prefix: str) -> int:
     row_num = find_counter_row(entity, year)
     if row_num:
@@ -195,6 +201,7 @@ def ensure_counter_row(entity: str, year: int, prefix: str) -> int:
 
     counters_ws.append_row([entity, year, 0, prefix], value_input_option="USER_ENTERED")
     return find_counter_row(entity, year)
+
 
 def generate_next_id(entity: str, prefix: str, year: Optional[int] = None, pad: int = 3) -> str:
     if year is None:
@@ -228,7 +235,7 @@ def write_log(
     activity_log_ws.append_row(
         [
             log_id,
-            current_timestamp_str(),
+            current_date_str(),
             user,
             action,
             record_type,
@@ -239,6 +246,37 @@ def write_log(
         ],
         value_input_option="USER_ENTERED",
     )
+
+
+# =========================================
+# STAGE / STATUS HELPERS
+# =========================================
+def set_lead_closed_not_converted(row_number: int, user_name: str = "Moorgen User") -> Dict[str, Any]:
+    row_data = get_row_dict_by_row_number(leads_ws, row_number)
+    lead_id = safe_str(row_data.get("Lead_ID"))
+
+    update_row_fields(leads_ws, row_number, {
+        "Lead Status": "Not Converted",
+        "Current_Stage": "Closed_Not_Converted",
+        "Next_Action": "",
+    })
+
+    write_log(
+        user=user_name,
+        action="Mark Lead Not Converted",
+        record_type="Lead",
+        record_id=lead_id or "N/A",
+        status="Success",
+        message=f"Lead row {row_number} marked as not converted",
+        error_details="",
+    )
+
+    return {
+        "success": True,
+        "row_number": row_number,
+        "lead_id": lead_id,
+        "lead_status": "Not Converted",
+    }
 
 
 # =========================================
@@ -288,6 +326,7 @@ def create_drive_folder(folder_name: str, parent_folder_id: str) -> Dict[str, st
 
     return folder
 
+
 def create_subfolder(parent_folder_id: str, subfolder_name: str) -> Dict[str, str]:
     metadata = {
         "name": subfolder_name,
@@ -301,6 +340,7 @@ def create_subfolder(parent_folder_id: str, subfolder_name: str) -> Dict[str, st
     ).execute()
 
     return folder
+
 
 def create_lead_folder_structure(
     lead_id: str,
@@ -360,7 +400,6 @@ def create_lead_record(row_number: int, user_name: str = "Moorgen User") -> Dict
             update_row_fields(leads_ws, row_number, {
                 "Automation_Status": "Error",
                 "Automation_Error": error_text,
-                "Last_Action_Time": current_timestamp_str(),
             })
 
             write_log(
@@ -381,20 +420,12 @@ def create_lead_record(row_number: int, user_name: str = "Moorgen User") -> Dict
 
         lead_id = generate_next_id(entity="Lead", prefix="LD")
 
-        drive_result = create_lead_folder_structure(
-            lead_id=lead_id,
-            client_name=row_data.get("Client_Name", ""),
-            project_name=row_data.get("Project_Name", ""),
-            project_location=row_data.get("Project_Location", ""),
-        )
-
         updates = {
             "Lead_ID": lead_id,
             "Created_Date": current_date_str(),
-            "Current_Stage": DEFAULT_STAGE,
-            "Next_Action": DEFAULT_NEXT_ACTION,
-            "Last_Action_Time": current_timestamp_str(),
-            "Drive_Folder_Link": drive_result["main_folder_link"],
+            "Current_Stage": "New_Enquiry",
+            "Next_Action": "Gather Requirements",
+            "Lead Status": "Next Steps",
             "Automation_Status": "Done",
             "Automation_Error": "",
         }
@@ -415,43 +446,19 @@ def create_lead_record(row_number: int, user_name: str = "Moorgen User") -> Dict
             "success": True,
             "row_number": row_number,
             "lead_id": lead_id,
-            "drive_folder_link": drive_result["main_folder_link"],
             "selected_scopes": validation["selected_scopes"],
-        }
-
-    except HttpError as e:
-        error_text = str(e)
-
-        update_row_fields(leads_ws, row_number, {
-            "Automation_Status": "Error",
-            "Automation_Error": error_text,
-            "Last_Action_Time": current_timestamp_str(),
-        })
-
-        write_log(
-            user=user_name,
-            action="Create Lead Record",
-            record_type="Lead",
-            record_id="N/A",
-            status="Drive Error",
-            message=f"Drive error for row {row_number}",
-            error_details=error_text,
-        )
-
-        return {
-            "success": False,
-            "row_number": row_number,
-            "errors": [error_text],
         }
 
     except Exception as e:
         error_text = str(e)
 
-        update_row_fields(leads_ws, row_number, {
-            "Automation_Status": "Error",
-            "Automation_Error": error_text,
-            "Last_Action_Time": current_timestamp_str(),
-        })
+        try:
+            update_row_fields(leads_ws, row_number, {
+                "Automation_Status": "Error",
+                "Automation_Error": error_text,
+            })
+        except Exception:
+            pass
 
         write_log(
             user=user_name,
@@ -468,6 +475,7 @@ def create_lead_record(row_number: int, user_name: str = "Moorgen User") -> Dict
             "row_number": row_number,
             "errors": [error_text],
         }
+
 
 def process_single_lead_row(row_number: int, user_name: str = "Moorgen User") -> Dict[str, Any]:
     row_data = get_row_dict_by_row_number(leads_ws, row_number)
@@ -493,19 +501,20 @@ def process_single_lead_row(row_number: int, user_name: str = "Moorgen User") ->
 def get_design_types_from_lead(row_data: Dict[str, Any]) -> List[str]:
     design_types = []
 
-    if is_yes(row_data.get("Arch_Lighting")) and is_yes(row_data.get("Lighting_Design_Required")):
+    if is_yes(row_data.get("Arch_Lighting")) and is_yes(row_data.get("Design_Required")):
         design_types.append("Architectural Lighting Layout")
 
-    if is_yes(row_data.get("Decorative_Lighting")):
+    if is_yes(row_data.get("Decorative_Lighting")) and is_yes(row_data.get("Design_Required")):
         design_types.append("Decorative Layout")
 
     if is_yes(row_data.get("Automation_Required")) and is_yes(row_data.get("Automation_Concept_Required")):
         design_types.append("Automation Layout")
 
-    if is_yes(row_data.get("Mechanical_Keypads_Required")):
+    if is_yes(row_data.get("Mechanical_Keypads_Required")) and is_yes(row_data.get("Design_Required")):
         design_types.append("Keypad Positioning Layout")
 
     return design_types
+
 
 def create_design_tasks_from_lead(row_number: int, user_name: str = "Moorgen User") -> Dict[str, Any]:
     row_data = get_row_dict_by_row_number(leads_ws, row_number)
@@ -539,28 +548,20 @@ def create_design_tasks_from_lead(row_number: int, user_name: str = "Moorgen Use
                 "",
                 "Pending",
                 "",
-                safe_str(row_data.get("Notes")),
+                safe_str(row_data.get("Remarks")),
             ],
             value_input_option="USER_ENTERED",
         )
 
         created_ids.append(design_id)
 
-    boq_required = is_yes(row_data.get("BOQ_Required"))
-
-    if boq_required:
-        current_stage = "Design_And_BOQ_Requested"
-        next_action = "Start Design and Process BOQ Queue"
-    else:
-        current_stage = "Design_Requested"
-        next_action = "Start Design Work"
-
     update_row_fields(leads_ws, row_number, {
-        "Design_Status": "Pending",
         "Latest_Design_ID": ", ".join(created_ids),
-        "Current_Stage": current_stage,
-        "Next_Action": next_action,
-        "Last_Action_Time": current_timestamp_str(),
+        "Current_Stage": "Design_Requested",
+        "Next_Action": "Start Design",
+        "Lead Status": "Next Steps",
+        "Automation_Status": "Done",
+        "Automation_Error": "",
     })
 
     write_log(
@@ -577,8 +578,6 @@ def create_design_tasks_from_lead(row_number: int, user_name: str = "Moorgen Use
         "success": True,
         "lead_id": lead_id,
         "created_design_ids": created_ids,
-        "current_stage": current_stage,
-        "next_action": next_action,
     }
 
 
@@ -599,6 +598,7 @@ def get_boq_categories_from_lead(row_data: Dict[str, Any]) -> List[str]:
 
     return categories
 
+
 def create_boq_request_from_lead(row_number: int, user_name: str = "Moorgen User") -> Dict[str, Any]:
     row_data = get_row_dict_by_row_number(leads_ws, row_number)
 
@@ -609,18 +609,25 @@ def create_boq_request_from_lead(row_number: int, user_name: str = "Moorgen User
             "message": "Lead_ID missing. Create lead first."
         }
 
-    if not is_yes(row_data.get("BOQ_Required")):
-        return {
-            "success": False,
-            "message": "BOQ_Required is not Yes."
-        }
-
     boq_categories = get_boq_categories_from_lead(row_data)
     if not boq_categories:
         return {
             "success": False,
             "message": "No BOQ categories derived from this lead."
         }
+
+    # create folder only when quote/BOQ starts
+    existing_folder_link = safe_str(row_data.get("Drive_Folder_Link"))
+    if not existing_folder_link:
+        drive_result = create_lead_folder_structure(
+            lead_id=lead_id,
+            client_name=row_data.get("Client_Name", ""),
+            project_name=row_data.get("Project_Name", ""),
+            project_location=row_data.get("Project_Location", ""),
+        )
+        update_row_fields(leads_ws, row_number, {
+            "Drive_Folder_Link": drive_result["main_folder_link"]
+        })
 
     created_request_ids = []
 
@@ -647,7 +654,7 @@ def create_boq_request_from_lead(row_number: int, user_name: str = "Moorgen User
                 "",
                 "",
                 "",
-                safe_str(row_data.get("Notes")),
+                safe_str(row_data.get("Remarks")),
             ],
             value_input_option="USER_ENTERED",
         )
@@ -657,18 +664,20 @@ def create_boq_request_from_lead(row_number: int, user_name: str = "Moorgen User
     design_required = is_yes(row_data.get("Design_Required"))
 
     if design_required:
-        current_stage = "Design_And_BOQ_Requested"
-        next_action = "Start Design and Process BOQ Queue"
+        current_stage = "Design_And_Quote_Requested"
+        next_action = "Start Design and Prepare Quote"
     else:
-        current_stage = "BOQ_Requested"
-        next_action = "Process BOQ Queue"
+        current_stage = "Quote_Requested"
+        next_action = "Prepare Quote"
 
     update_row_fields(leads_ws, row_number, {
         "BOQ_Status": "Pending",
         "Latest_BOQ_ID": ", ".join(created_request_ids),
         "Current_Stage": current_stage,
         "Next_Action": next_action,
-        "Last_Action_Time": current_timestamp_str(),
+        "Lead Status": "Next Steps",
+        "Automation_Status": "Done",
+        "Automation_Error": "",
     })
 
     write_log(
@@ -686,8 +695,6 @@ def create_boq_request_from_lead(row_number: int, user_name: str = "Moorgen User
         "lead_id": lead_id,
         "request_ids": created_request_ids,
         "categories": boq_categories,
-        "current_stage": current_stage,
-        "next_action": next_action,
     }
 
 
@@ -719,12 +726,7 @@ def confirm_order_from_lead(row_number: int, user_name: str = "Moorgen User") ->
 
     project_id = generate_next_id(entity="Project", prefix="PRJ")
 
-    advance_required = is_yes(row_data.get("Advance_Required"))
-    advance_status = safe_str(row_data.get("Advance_Status"))
-    if not advance_status:
-        advance_status = "Pending" if advance_required else "Not Required"
-
-    order_confirmed_date = safe_str(row_data.get("Order_Confirmed_Date")) or current_date_str()
+    advance_status = safe_str(row_data.get("Advance_Status")) or "Pending"
 
     projects_ws.append_row(
         [
@@ -734,27 +736,24 @@ def confirm_order_from_lead(row_number: int, user_name: str = "Moorgen User") ->
             safe_str(row_data.get("Project_Name")),
             safe_str(row_data.get("Project_Location")),
             safe_str(row_data.get("Assigned_Sales")),
-            order_confirmed_date,
+            safe_str(row_data.get("Order_Confirmed_Date")) or current_date_str(),
             advance_status,
             safe_str(row_data.get("Advance_Amount")),
             "Order Confirmed",
             safe_str(row_data.get("Drive_Folder_Link")),
-            safe_str(row_data.get("Notes")),
+            safe_str(row_data.get("Remarks")),
         ],
         value_input_option="USER_ENTERED",
     )
 
-    current_stage = "Order_Confirmed"
-    next_action = "Collect Advance" if advance_required else "Start Project Planning"
-
     update_row_fields(leads_ws, row_number, {
         "Project_ID": project_id,
-        "Order_Confirmed_Date": order_confirmed_date,
-        "Order_Confirmed_By": user_name,
-        "Advance_Status": advance_status,
-        "Current_Stage": current_stage,
-        "Next_Action": next_action,
-        "Last_Action_Time": current_timestamp_str(),
+        "Order_Confirmed_Date": safe_str(row_data.get("Order_Confirmed_Date")) or current_date_str(),
+        "Current_Stage": "Project_Created",
+        "Next_Action": "Collect Advance",
+        "Lead Status": "Converted",
+        "Automation_Status": "Done",
+        "Automation_Error": "",
     })
 
     write_log(
@@ -771,8 +770,6 @@ def confirm_order_from_lead(row_number: int, user_name: str = "Moorgen User") ->
         "success": True,
         "lead_id": lead_id,
         "project_id": project_id,
-        "current_stage": current_stage,
-        "next_action": next_action,
     }
 
 
@@ -786,6 +783,10 @@ def process_post_lead_actions(row_number: int, user_name: str = "Moorgen User") 
     if not lead_id:
         return {"success": False, "message": "Lead_ID missing. Run lead creation first."}
 
+    lead_status = safe_str(row_data.get("Lead Status")).lower()
+    if lead_status == "not converted":
+        return {"success": False, "message": "Lead marked as Not Converted."}
+
     results = {
         "success": True,
         "lead_id": lead_id,
@@ -793,15 +794,13 @@ def process_post_lead_actions(row_number: int, user_name: str = "Moorgen User") 
         "boq": None,
     }
 
-    post_action = safe_str(row_data.get("Post_Lead_Action")).lower()
+    stage = safe_str(row_data.get("Current_Stage")).lower()
 
-    if post_action in {"design", "design + boq"} or is_yes(row_data.get("Design_Required")):
-        if not safe_str(row_data.get("Latest_Design_ID")):
-            results["design"] = create_design_tasks_from_lead(row_number, user_name=user_name)
+    if is_yes(row_data.get("Design_Required")) and not safe_str(row_data.get("Latest_Design_ID")):
+        results["design"] = create_design_tasks_from_lead(row_number, user_name=user_name)
 
-    if post_action in {"boq", "design + boq"} or is_yes(row_data.get("BOQ_Required")):
-        if safe_str(row_data.get("BOQ_Status")).lower() not in {"pending", "generated"}:
-            results["boq"] = create_boq_request_from_lead(row_number, user_name=user_name)
+    if safe_str(row_data.get("BOQ_Status")).lower() not in {"pending", "generated"}:
+        results["boq"] = create_boq_request_from_lead(row_number, user_name=user_name)
 
     return results
 
@@ -813,6 +812,10 @@ def should_process_lead(row_data: Dict[str, Any]) -> bool:
     if safe_str(row_data.get("Lead_ID")):
         return False
 
+    lead_status = safe_str(row_data.get("Lead Status")).lower()
+    if lead_status == "not converted":
+        return False
+
     status = safe_str(row_data.get("Automation_Status")).lower()
     if status not in {"", "pending"}:
         return False
@@ -821,6 +824,7 @@ def should_process_lead(row_data: Dict[str, Any]) -> bool:
         return False
 
     return True
+
 
 def process_all_pending_leads(user_name: str = "Moorgen Auto") -> Dict[str, Any]:
     all_values = leads_ws.get_all_values()
@@ -850,6 +854,7 @@ def process_all_pending_leads(user_name: str = "Moorgen Auto") -> Dict[str, Any]
         "results": results,
     }
 
+
 def process_all_post_lead_actions(user_name: str = "Moorgen Auto") -> Dict[str, Any]:
     all_values = leads_ws.get_all_values()
 
@@ -862,8 +867,11 @@ def process_all_post_lead_actions(user_name: str = "Moorgen Auto") -> Dict[str, 
         if not safe_str(row_data.get("Lead_ID")):
             continue
 
+        if safe_str(row_data.get("Lead Status")).lower() == "not converted":
+            continue
+
         needs_design = is_yes(row_data.get("Design_Required")) and not safe_str(row_data.get("Latest_Design_ID"))
-        needs_boq = is_yes(row_data.get("BOQ_Required")) and safe_str(row_data.get("BOQ_Status")).lower() not in {"pending", "generated"}
+        needs_boq = safe_str(row_data.get("BOQ_Status")).lower() not in {"pending", "generated"}
 
         if not needs_design and not needs_boq:
             continue
@@ -877,6 +885,7 @@ def process_all_post_lead_actions(user_name: str = "Moorgen Auto") -> Dict[str, 
         "processed_rows": processed,
         "results": results,
     }
+
 
 def process_all_order_confirmations(user_name: str = "Moorgen Auto") -> Dict[str, Any]:
     all_values = leads_ws.get_all_values()
@@ -920,9 +929,11 @@ def process_all_order_confirmations(user_name: str = "Moorgen Auto") -> Dict[str
 def root():
     return {"message": "Moorgen backend is running"}
 
+
 @app.get("/health")
 def health():
     return {"ok": True}
+
 
 @app.post("/process-leads")
 def process_leads(req: UserRequest):
@@ -930,6 +941,7 @@ def process_leads(req: UserRequest):
         return process_all_pending_leads(user_name=req.user_name)
     except Exception as e:
         return {"success": False, "error": str(e)}
+
 
 @app.post("/process-lead-row")
 def process_lead_row(req: RowRequest):
@@ -941,12 +953,14 @@ def process_lead_row(req: RowRequest):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+
 @app.post("/process-post-leads")
 def process_post_leads(req: UserRequest):
     try:
         return process_all_post_lead_actions(user_name=req.user_name)
     except Exception as e:
         return {"success": False, "error": str(e)}
+
 
 @app.post("/process-order-confirmations")
 def process_order_confirmations(req: UserRequest):
