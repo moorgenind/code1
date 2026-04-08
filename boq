@@ -1,0 +1,995 @@
+import os
+import re
+import json
+import pickle
+from io import BytesIO
+from datetime import datetime
+from typing import Dict, Any, List, Optional, Tuple
+
+import gspread
+from fastapi import FastAPI
+from pydantic import BaseModel
+from google.auth.transport.requests import Request
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
+
+
+# ==========================================================
+# CONFIG
+# ==========================================================
+CONFIG = {
+    "timezone": "Asia/Kolkata",
+
+    # CRM
+    "crm_spreadsheet_name": "Moorgen_CRM",
+    "crm_boq_queue_sheet": "BOQ_Request_Queue",
+
+    # External master sheets
+    "price_lists_spreadsheet_id": "1DgD143IfVxbQTHd6scTxFmT8wW7-L9J7ypfxJBgq-Ww",
+    "price_arch_sheet": "Product_Database - Architectural Lighting",
+    "price_oem_sheet": "OEM Products",
+
+    # BOQ template
+    "boq_template_spreadsheet_id": "17c1zOFuDunLLB-PNtIaicM8TkCznts7fkKUNHIniXWM",
+    "project_details_sheet": "Project Details",
+    "arch_input_sheet": "BOQ_Generator_arch",
+    "arch_output_sheet": "Breakdown - Architectural",
+    "summary_sheet": "Summary",
+
+    # Drive
+    "quotes_subfolder_name": "01_Quotes",
+
+    # auth files
+    "oauth_file": "oauth_credentials.json",
+    "token_file": "token.pickle",
+
+    "scopes": [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ],
+}
+
+
+# ==========================================================
+# FASTAPI
+# ==========================================================
+app = FastAPI()
+
+
+class ArchitecturalBoqRequest(BaseModel):
+    user_name: str = "Moorgen User"
+    request_id: Optional[str] = None
+    lead_id: Optional[str] = None
+    row_number: Optional[int] = None
+
+
+# ==========================================================
+# AUTH
+# NOTE:
+# This assumes Railway has access to oauth_credentials.json and token.pickle.
+# For long-term production, a non-interactive auth flow is better.
+# ==========================================================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+OAUTH_FILE = os.path.join(BASE_DIR, CONFIG["oauth_file"])
+TOKEN_FILE = os.path.join(BASE_DIR, CONFIG["token_file"])
+
+
+def get_google_creds():
+    creds = None
+
+    if os.path.exists(TOKEN_FILE):
+        with open(TOKEN_FILE, "rb") as token:
+            creds = pickle.load(token)
+
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(
+                OAUTH_FILE, CONFIG["scopes"]
+            )
+            creds = flow.run_local_server(port=0)
+
+        with open(TOKEN_FILE, "wb") as token:
+            pickle.dump(creds, token)
+
+    return creds
+
+
+creds = get_google_creds()
+gc = gspread.authorize(creds)
+drive_service = build("drive", "v3", credentials=creds)
+sheets_service = build("sheets", "v4", credentials=creds)
+
+
+# ==========================================================
+# HELPERS
+# ==========================================================
+def now_str() -> str:
+    return datetime.now().strftime("%d/%m/%Y")
+
+
+def safe_str(v: Any) -> str:
+    return "" if v is None else str(v).strip()
+
+
+def clean_header(h: str) -> str:
+    return str(h).strip()
+
+
+def slugify(text: Any) -> str:
+    text = safe_str(text)
+    text = re.sub(r"[^A-Za-z0-9]+", "_", text)
+    return text.strip("_")
+
+
+def parse_drive_id(value: str) -> Optional[str]:
+    value = safe_str(value)
+    m = re.search(r"[-\w]{25,}", value)
+    return m.group(0) if m else None
+
+
+def get_ws_by_spreadsheet_name(spreadsheet_name: str, worksheet_name: str):
+    ss = gc.open(spreadsheet_name)
+    return ss, ss.worksheet(worksheet_name)
+
+
+def get_ws_by_spreadsheet_id(spreadsheet_id: str, worksheet_name: str):
+    ss = gc.open_by_key(spreadsheet_id)
+    return ss, ss.worksheet(worksheet_name)
+
+
+def get_headers(ws) -> List[str]:
+    return [clean_header(h) for h in ws.row_values(1)]
+
+
+def get_col_map(ws) -> Dict[str, int]:
+    headers = get_headers(ws)
+    return {h: i + 1 for i, h in enumerate(headers)}
+
+
+def get_row_dict_by_row_number(ws, row_number: int) -> Dict[str, Any]:
+    headers = get_headers(ws)
+    values = ws.row_values(row_number)
+    values += [""] * (len(headers) - len(values))
+    return dict(zip(headers, values))
+
+
+def update_row_fields(ws, row_number: int, updates: Dict[str, Any]):
+    col_map = get_col_map(ws)
+    cells = []
+    for k, v in updates.items():
+        if k not in col_map:
+            continue
+        c = ws.cell(row_number, col_map[k])
+        c.value = v
+        cells.append(c)
+    if cells:
+        ws.update_cells(cells, value_input_option="USER_ENTERED")
+
+
+def find_row_by_request_or_row(
+    ws,
+    request_id: Optional[str] = None,
+    row_number: Optional[int] = None
+) -> Tuple[int, Dict[str, Any]]:
+    if row_number:
+        return row_number, get_row_dict_by_row_number(ws, row_number)
+
+    if request_id:
+        records = ws.get_all_records()
+        for idx, row in enumerate(records, start=2):
+            if safe_str(row.get("Request_ID")) == safe_str(request_id):
+                return idx, row
+
+    raise ValueError("Could not locate BOQ request row.")
+
+
+def build_id(prefix: str, lead_id: str, revision_no: int) -> str:
+    return f"{prefix}-{lead_id}-R{revision_no}"
+
+
+# ==========================================================
+# DRIVE HELPERS
+# ==========================================================
+def get_or_create_subfolder(parent_folder_id: str, subfolder_name: str) -> Dict[str, str]:
+    query = (
+        f"'{parent_folder_id}' in parents and "
+        f"name = '{subfolder_name}' and "
+        f"mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+    )
+    res = drive_service.files().list(q=query, fields="files(id,name,webViewLink)").execute()
+    files = res.get("files", [])
+    if files:
+        return files[0]
+
+    body = {
+        "name": subfolder_name,
+        "mimeType": "application/vnd.google-apps.folder",
+        "parents": [parent_folder_id],
+    }
+    created = drive_service.files().create(
+        body=body,
+        fields="id,name,webViewLink"
+    ).execute()
+    return created
+
+
+def copy_template_to_folder(template_file_id: str, target_folder_id: str, new_name: str) -> Dict[str, str]:
+    body = {
+        "name": new_name,
+        "parents": [target_folder_id],
+    }
+    copied = drive_service.files().copy(
+        fileId=template_file_id,
+        body=body,
+        fields="id,name,webViewLink"
+    ).execute()
+    return copied
+
+
+# ==========================================================
+# PRICE LIST LOADING
+# ==========================================================
+def detect_col_indices(headers: List[str], patterns: Dict[str, str]) -> Dict[str, int]:
+    out = {}
+    for key, pattern in patterns.items():
+        rgx = re.compile(pattern, re.I)
+        idx = next((i for i, h in enumerate(headers) if rgx.search(str(h))), -1)
+        out[key] = idx
+    return out
+
+
+def load_arch_price_map() -> Dict[str, Dict[str, Any]]:
+    _, ws = get_ws_by_spreadsheet_id(CONFIG["price_lists_spreadsheet_id"], CONFIG["price_arch_sheet"])
+    headers = get_headers(ws)
+
+    patterns = {
+        "model": r"model[_\s\-]*no\.?",
+        "name": r"product\s*name",
+        "photo": r"product\s*photo",
+        "brand": r"family\s*name",
+        "price": r"mrp[_\s\-]*gst|dealer[_\s\-]*mrp|mrp",
+        "desc": r"^desc$|description",
+        "power": r"power",
+        "cct": r"color\s*temperature",
+        "beam": r"beam\s*angle",
+        "cri": r"color\s*rendering",
+        "body": r"^body$|body\s*color",
+        "driver": r"remarks|driver",
+        "led_brand": r"led\s*brand",
+        "control_gear": r"control\s*gear",
+        "ip": r"ip\s*rating",
+        "warranty": r"warranty",
+        "type": r"^type$",
+        "unit": r"^unit$",
+    }
+    ix = detect_col_indices(headers, patterns)
+
+    data = ws.get_all_values()[1:]
+    out = {}
+
+    for row in data:
+        model_no = safe_str(row[ix["model"]]) if ix["model"] >= 0 and ix["model"] < len(row) else ""
+        if not model_no:
+            continue
+
+        def getv(k):
+            i = ix.get(k, -1)
+            return row[i] if i >= 0 and i < len(row) else ""
+
+        price_raw = getv("price")
+        try:
+            price = float(str(price_raw).replace(",", "").replace("₹", "").strip() or 0)
+        except Exception:
+            price = 0.0
+
+        out[model_no] = {
+            "model_no": model_no,
+            "product_name": getv("name"),
+            "photo": getv("photo"),
+            "brand": getv("brand") or "Moorgen",
+            "price": price,
+            "desc": getv("desc"),
+            "power": getv("power"),
+            "cct": getv("cct"),
+            "beam": getv("beam"),
+            "cri": getv("cri"),
+            "body": getv("body"),
+            "driver": getv("driver"),
+            "led_brand": getv("led_brand"),
+            "control_gear": getv("control_gear"),
+            "ip_rating": getv("ip"),
+            "warranty": getv("warranty"),
+            "type": getv("type"),
+            "unit": getv("unit") or "pcs",
+        }
+    return out
+
+
+def load_oem_map() -> Dict[str, Dict[str, Any]]:
+    _, ws = get_ws_by_spreadsheet_id(CONFIG["price_lists_spreadsheet_id"], CONFIG["price_oem_sheet"])
+    rows = ws.get_all_values()
+    if not rows:
+        return {}
+
+    headers = [clean_header(h) for h in rows[0]]
+    ix = detect_col_indices(headers, {
+        "name": r"oem\s*product|product\s*name|description",
+        "photo": r"product\s*photo|photo|image",
+    })
+
+    out = {}
+    for row in rows[1:]:
+        name = safe_str(row[ix["name"]]) if ix["name"] >= 0 and ix["name"] < len(row) else ""
+        if not name:
+            continue
+        photo = row[ix["photo"]] if ix["photo"] >= 0 and ix["photo"] < len(row) else ""
+        out[name] = {"name": name, "photo": photo}
+    return out
+
+
+# ==========================================================
+# PROJECT DETAILS
+# Assumes labels in column A and values in column B
+# ==========================================================
+def write_project_details(
+    boq_ss_key: str,
+    details: Dict[str, Any]
+):
+    ws = gc.open_by_key(boq_ss_key).worksheet(CONFIG["project_details_sheet"])
+
+    mapping = {
+        "Lead_ID": "Lead_ID",
+        "Request_ID": "Request_ID",
+        "Client_Name": "Client_Name",
+        "BOQ_Type": "BOQ_Type",
+        "Category": "Category",
+        "Scope": "Scope",
+        "Prepared_By": "Prepared_By",
+        "Date": "Date",
+        "Revision_No": "Revision_No",
+        "Dimming_Type": "Dimming_Type",
+    }
+
+    existing = ws.get_all_values()
+    label_to_row = {}
+    for idx, row in enumerate(existing, start=1):
+        if row:
+            label_to_row[safe_str(row[0])] = idx
+
+    updates = []
+    for label, value_key in mapping.items():
+        row_num = label_to_row.get(label)
+        if row_num:
+            updates.append({
+                "range": f"{CONFIG['project_details_sheet']}!B{row_num}",
+                "values": [[details.get(value_key, "")]]
+            })
+
+    if updates:
+        sheets_service.spreadsheets().values().batchUpdate(
+            spreadsheetId=boq_ss_key,
+            body={
+                "valueInputOption": "USER_ENTERED",
+                "data": updates
+            }
+        ).execute()
+
+
+# ==========================================================
+# REVISION LOGIC
+# Based on BOQ_Request_Queue rows with same Lead_ID + Category
+# ==========================================================
+def next_revision_no(queue_ws, lead_id: str, category: str) -> int:
+    records = queue_ws.get_all_records()
+    max_rev = 0
+    for row in records:
+        if safe_str(row.get("Lead_ID")) != safe_str(lead_id):
+            continue
+        if safe_str(row.get("Category")) != safe_str(category):
+            continue
+        rev = safe_str(row.get("Revision_No"))
+        if rev.isdigit():
+            max_rev = max(max_rev, int(rev))
+    return max_rev + 1
+
+
+# ==========================================================
+# BOQ GENERATOR ARCH INPUT READER
+# Expected columns:
+# Levels | Area(optional) | Code | Specification (from layout) | Qty | Unit | Model No
+# Automation? | Mag Track cols | OEM Description | OEM Unit Price
+# ==========================================================
+def read_arch_input_rows(boq_ss_key: str) -> List[Dict[str, Any]]:
+    ws = gc.open_by_key(boq_ss_key).worksheet(CONFIG["arch_input_sheet"])
+    headers = get_headers(ws)
+    data = ws.get_all_values()[1:]
+
+    idx = detect_col_indices(headers, {
+        "level": r"levels?",
+        "area": r"^area$",
+        "code": r"^code$",
+        "spec": r"specification",
+        "qty": r"^qty$",
+        "unit": r"^unit$",
+        "model": r"model\s*no",
+        "automation": r"automation",
+        "track_shape": r"magnetic\s*track.*shape",
+        "track_qty": r"magnetic\s*track.*quantity",
+        "track_c2c": r"ceiling\s*to\s*ceiling",
+        "track_c2w": r"ceiling\s*to\s*wall",
+        "oem_desc": r"oem.*description",
+        "oem_price": r"oem.*unit\s*price",
+    })
+
+    rows = []
+    for row in data:
+        level = row[idx["level"]] if idx["level"] >= 0 and idx["level"] < len(row) else ""
+        if not safe_str(level):
+            continue
+
+        def val(k):
+            i = idx.get(k, -1)
+            return row[i] if i >= 0 and i < len(row) else ""
+
+        rows.append({
+            "level": val("level"),
+            "area": val("area") or val("code"),
+            "code": val("code"),
+            "specification": val("spec"),
+            "qty": float(val("qty") or 0),
+            "unit": val("unit") or "pcs",
+            "model_no": val("model"),
+            "automation": val("automation"),
+            "track_shape": val("track_shape"),
+            "track_qty": float(val("track_qty") or 0),
+            "track_c2c": float(val("track_c2c") or 0),
+            "track_c2w": float(val("track_c2w") or 0),
+            "oem_desc": val("oem_desc"),
+            "oem_price": float(val("oem_price") or 0),
+        })
+    return rows
+
+
+# ==========================================================
+# BUSINESS LOGIC COPIED FROM CURRENT APPS SCRIPT
+# ==========================================================
+TRACK_CONFIG = {
+    "Surface": {"powerBox": "MB3669", "flat_jointers": "MB3657", "facade_jointers": "MB3658"},
+    "Embedded": {"powerBox": "MB3668", "flat_jointers": "MB3661", "facade_jointers": "MB3662"},
+    "Recessed": {"powerBox": "MB3668", "flat_jointers": "MB3653", "facade_jointers": "MB3654"},
+}
+
+TRACK_BASE_SKU = {
+    "Surface": {"1": "MB3655", "2": "MB3656"},
+    "Embedded": {"1": "MB3651", "2": "MB3652"},
+    "Recessed": {"1": "MB3659", "2": "MB3659"},
+}
+
+STRAIGHT_SPLICE = "MB3664"
+CORNER_SPLICE = "MB3665"
+
+PSU_100W = {"model": "OEM-PSU-100W-48V", "name": "External PSU 100W 48V (0–10V)", "price": 2800}
+PSU_200W = {"model": "OEM-PSU-200W-48V", "name": "External PSU 200W 48V (0–10V)", "price": 4200}
+
+
+def parse_track_spec_type_len(s: str) -> Tuple[str, int]:
+    t = safe_str(s).lower()
+    track_type = "Surface"
+    if "pre" in t and "install" in t:
+        track_type = "Embedded"
+    elif "plaster" in t or "recess" in t:
+        track_type = "Recessed"
+    elif "surface" in t:
+        track_type = "Surface"
+
+    length = 1
+    if re.search(r"\b2\s*m\b|2000\s*mm|(^|[^0-9])2m([^0-9]|$)", t, re.I):
+        length = 2
+    elif re.search(r"\b1\s*m\b|1000\s*mm|(^|[^0-9])1m([^0-9]|$)", t, re.I):
+        length = 1
+
+    return track_type, length
+
+
+def parse_watt_from_power(power_str: str) -> float:
+    m = re.search(r"(\d+(\.\d+)?)\s*w", safe_str(power_str), re.I)
+    return float(m.group(1)) if m else 0.0
+
+
+def choose_psus(total_w: float):
+    packs = []
+    if total_w <= 0:
+        return packs
+
+    remaining = total_w
+    n200 = int(remaining // 200)
+    if n200 > 0:
+        packs.append({"opt": PSU_200W, "qty": n200})
+        remaining -= n200 * 200
+
+    if remaining > 0:
+        packs.append({"opt": PSU_200W if remaining > 100 else PSU_100W, "qty": 1})
+
+    return packs
+
+
+def build_desc(product: Dict[str, Any], brand: str, unit: str) -> str:
+    if not product:
+        return ""
+
+    out = []
+    if product.get("power"):
+        out.append(f"Power: {product['power']}" + (" per meter" if unit == "m" else ""))
+    if product.get("cct"):
+        out.append(f"LED Temperature: {product['cct']}K")
+    if product.get("led_brand"):
+        out.append(f"LED Brand: {product['led_brand']}")
+    if product.get("control_gear"):
+        out.append(f"Control Gear: {product['control_gear']}")
+    if product.get("ip_rating"):
+        out.append(f"IP Rating: {product['ip_rating']}")
+    if product.get("body"):
+        out.append(f"Body Colour: {product['body']}")
+    out.append(f"Lighting Brand: {brand}")
+    if product.get("warranty"):
+        out.append(f"Warranty Period: {product['warranty']}")
+    return "\n".join(out)
+
+
+# ==========================================================
+# GENERATE BREAKDOWN
+# ==========================================================
+def generate_arch_breakdown_rows(
+    boq_ss_key: str,
+    price_map: Dict[str, Dict[str, Any]],
+    oem_map: Dict[str, Dict[str, Any]]
+) -> Tuple[List[List[Any]], float]:
+    helper_rows = read_arch_input_rows(boq_ss_key)
+    rows_out = []
+    grand_total = 0.0
+    serial = 1
+
+    def add_line(level, area, model_no, product_name, image, brand, desc, unit, qty, unit_price):
+        nonlocal serial, grand_total, rows_out
+        total_price = qty * unit_price
+        rows_out.append([
+            serial, level, area, model_no, product_name, image, brand, desc, unit, qty, unit_price, total_price
+        ])
+        serial += 1
+        grand_total += total_price
+
+    def push_sku(model, qty, level, area, unit_cell):
+        if not qty or qty <= 0:
+            return
+        rec = price_map.get(model)
+        if not rec:
+            return
+        add_line(
+            level=level,
+            area=area,
+            model_no=model,
+            product_name=rec.get("product_name", model),
+            image=rec.get("photo", ""),
+            brand=rec.get("brand", "Moorgen"),
+            desc=build_desc(rec, rec.get("brand", "Moorgen"), unit_cell),
+            unit=unit_cell,
+            qty=qty,
+            unit_price=rec.get("price", 0.0),
+        )
+
+    for r in helper_rows:
+        level = safe_str(r["level"])
+        area = safe_str(r["area"])
+        spec = safe_str(r["specification"])
+        qty_d = float(r["qty"] or 0)
+        unit_cell = safe_str(r["unit"]) or "pcs"
+        model_no = safe_str(r["model_no"])
+        track_spec = safe_str(r["track_shape"])
+        track_qty = float(r["track_qty"] or 0)
+        c2c = float(r["track_c2c"] or 0)
+        c2w = float(r["track_c2w"] or 0)
+        oem_desc = safe_str(r["oem_desc"])
+        oem_price = float(r["oem_price"] or 0)
+
+        is_track = bool(track_spec)
+
+        # main item
+        if model_no and model_no in price_map:
+            rec = price_map[model_no]
+            add_line(
+                level=level,
+                area=area,
+                model_no=model_no,
+                product_name=rec.get("product_name", model_no),
+                image=rec.get("photo", ""),
+                brand=rec.get("brand", "Moorgen"),
+                desc=build_desc(rec, rec.get("brand", "Moorgen"), unit_cell),
+                unit=unit_cell,
+                qty=qty_d,
+                unit_price=rec.get("price", 0.0),
+            )
+        else:
+            oem_name = oem_desc.split("\n")[0] if oem_desc else "OEM Item"
+            oem_photo = oem_map.get(oem_name, {}).get("photo", "")
+            add_line(
+                level=level,
+                area=area,
+                model_no=model_no,
+                product_name=oem_name,
+                image=oem_photo,
+                brand="OEM",
+                desc=oem_desc,
+                unit=unit_cell,
+                qty=qty_d,
+                unit_price=oem_price,
+            )
+
+        # track rails + accessories
+        if is_track and track_qty > 0:
+            track_type, rail_len = parse_track_spec_type_len(track_spec)
+            base_model = TRACK_BASE_SKU.get(track_type, {}).get(str(rail_len), "")
+            cfg = TRACK_CONFIG.get(track_type, TRACK_CONFIG["Surface"])
+
+            if base_model and model_no.lower() != base_model.lower():
+                push_sku(base_model, track_qty, level, area, unit_cell)
+
+            push_sku(cfg["powerBox"], track_qty, level, area, unit_cell)
+            push_sku(STRAIGHT_SPLICE, max(track_qty - 1, 0), level, area, unit_cell)
+            push_sku(CORNER_SPLICE, c2c + c2w, level, area, unit_cell)
+
+            if c2c > 0:
+                push_sku(cfg["flat_jointers"], c2c, level, area, unit_cell)
+            if c2w > 0:
+                push_sku(cfg["facade_jointers"], c2w, level, area, unit_cell)
+
+        # PSU logic
+        if is_track:
+            per_head_w = 0.0
+            if model_no and model_no in price_map:
+                per_head_w = parse_watt_from_power(price_map[model_no].get("power", ""))
+            if not per_head_w:
+                m = re.search(r"(\d+(\.\d+)?)\s*w", spec, re.I)
+                if m:
+                    per_head_w = float(m.group(1))
+
+            total_w = per_head_w * qty_d
+            for p in choose_psus(total_w):
+                add_line(
+                    level=level,
+                    area=area,
+                    model_no=p["opt"]["model"],
+                    product_name=p["opt"]["name"] + (f" (sized for ~{round(total_w)}W)" if total_w > 0 else ""),
+                    image="",
+                    brand="OEM",
+                    desc="",
+                    unit=unit_cell or "pc",
+                    qty=p["qty"],
+                    unit_price=p["opt"]["price"],
+                )
+
+    return rows_out, grand_total
+
+
+# ==========================================================
+# WRITE OUTPUT
+# ==========================================================
+ARCH_HEADER = [
+    "S.No.", "Level", "Area", "Model No.", "Product Name", "Image", "Brand",
+    "Description", "Unit", "Qty", "Unit Price (₹)", "Total Price (₹)"
+]
+
+
+def clear_sheet_except_header(ws, header_row=5):
+    last_row = ws.row_count
+    last_col = ws.col_count
+    if last_row > header_row:
+        ws.batch_clear([f"A{header_row+1}:{gspread.utils.rowcol_to_a1(last_row, last_col)}"])
+
+
+def write_arch_breakdown(boq_ss_key: str, rows: List[List[Any]], grand_total: float):
+    ss = gc.open_by_key(boq_ss_key)
+    ws = ss.worksheet(CONFIG["arch_output_sheet"])
+
+    # title block
+    ws.update("A2", "Architectural Lighting – BOQ")
+    ws.update("A3", "Project:")
+    ws.update("B3", f"=IFERROR(VLOOKUP(\"Client_Name\",'{CONFIG['project_details_sheet']}'!A:B,2,FALSE),\"\")")
+
+    header_row = 5
+    ws.update(f"A{header_row}:L{header_row}", [ARCH_HEADER])
+
+    clear_sheet_except_header(ws, header_row=header_row)
+
+    if rows:
+        ws.update(f"A{header_row+1}:L{header_row+len(rows)}", rows, value_input_option="USER_ENTERED")
+
+        total_row = header_row + len(rows) + 1
+        ws.update(f"K{total_row}", [["Grand Total"]])
+        ws.update(f"L{total_row}", [[grand_total]], value_input_option="USER_ENTERED")
+
+
+def write_summary(boq_ss_key: str, grand_total: float):
+    ss = gc.open_by_key(boq_ss_key)
+    ws = ss.worksheet(CONFIG["summary_sheet"])
+
+    gst = round(grand_total * 0.18, 2)
+    total = round(grand_total + gst, 2)
+
+    # Simple fixed layout
+    updates = [
+        ("B5", "Project Name:"),
+        ("C5", f"=IFERROR(VLOOKUP(\"Client_Name\",'{CONFIG['project_details_sheet']}'!A:B,2,FALSE),\"\")"),
+        ("B6", "System Category: Architectural"),
+        ("B7", f"Date: {datetime.now().strftime('%B %d, %Y')}"),
+        ("B10", "Architectural Lighting"),
+        ("C10", grand_total),
+        ("B11", "Total"),
+        ("C11", grand_total),
+        ("B12", "18% GST"),
+        ("C12", gst),
+        ("B13", "Grand Total"),
+        ("C13", total),
+    ]
+
+    for cell, value in updates:
+        ws.update(cell, [[value]], value_input_option="USER_ENTERED")
+
+
+# ==========================================================
+# QUEUE WRITEBACK
+# ==========================================================
+def write_queue_success(
+    ws,
+    row_number: int,
+    boq_id: str,
+    boq_link: str,
+    revision_no: int,
+    generated_file_name: str
+):
+    update_row_fields(ws, row_number, {
+        "BOQ_ID": boq_id,
+        "BOQ_Link": boq_link,
+        "Revision_No": revision_no,
+        "Generated_File_Name": generated_file_name,
+        "Status": "Done",
+        "Error_Message": "",
+    })
+
+
+def write_queue_processing(ws, row_number: int):
+    update_row_fields(ws, row_number, {"Status": "Processing"})
+
+
+def write_queue_error(ws, row_number: int, error_message: str):
+    update_row_fields(ws, row_number, {
+        "Status": "Error",
+        "Error_Message": error_message,
+    })
+
+
+# ==========================================================
+# CREATE STAGE
+# ==========================================================
+def create_architectural_boq_file(
+    request_id: Optional[str],
+    row_number: Optional[int],
+    user_name: str
+) -> Dict[str, Any]:
+    crm_ss, queue_ws = get_ws_by_spreadsheet_name(
+        CONFIG["crm_spreadsheet_name"],
+        CONFIG["crm_boq_queue_sheet"]
+    )
+    queue_row_num, row = find_row_by_request_or_row(queue_ws, request_id=request_id, row_number=row_number)
+
+    lead_id = safe_str(row.get("Lead_ID"))
+    request_id_val = safe_str(row.get("Request_ID"))
+    client_name = safe_str(row.get("Client_Name"))
+    category = safe_str(row.get("Category")) or "Architectural Lighting"
+    boq_type = safe_str(row.get("BOQ_Type")) or "Tentative"
+    scope = safe_str(row.get("Scope")) or category
+    prepared_by = safe_str(row.get("Prepared_By")) or user_name
+    dimming_type = safe_str(row.get("Dimming_Type"))
+    boq_link_existing = safe_str(row.get("BOQ_Link"))
+
+    if boq_link_existing:
+        return {
+            "success": True,
+            "message": "BOQ file already exists for this request.",
+            "boq_link": boq_link_existing,
+            "request_id": request_id_val,
+        }
+
+    # Need project folder from CRM queue row or later from Leads/Projects if you add it there.
+    # For now we assume BOQ_Request_Queue has BOQ_Link etc and also project folder comes from Notes or linked elsewhere.
+    # Since you said the lead/project folder already exists, we’ll fetch it from Leads later if needed.
+    leads_ws = gc.open(CONFIG["crm_spreadsheet_name"]).worksheet("Leads")
+    leads_records = leads_ws.get_all_records()
+
+    drive_folder_link = ""
+    for lead in leads_records:
+        if safe_str(lead.get("Lead_ID")) == lead_id:
+            drive_folder_link = safe_str(lead.get("Drive_Folder_Link"))
+            break
+
+    folder_id = parse_drive_id(drive_folder_link)
+    if not folder_id:
+        raise ValueError("Could not find Drive_Folder_Link for this lead.")
+
+    quotes_folder = get_or_create_subfolder(folder_id, CONFIG["quotes_subfolder_name"])
+
+    revision_no = next_revision_no(queue_ws, lead_id, category)
+    boq_id = build_id("BOQ-ARCH", lead_id, revision_no)
+    file_name = f"{lead_id}_{slugify(client_name)}_ARCH_BOQ_R{revision_no}"
+
+    write_queue_processing(queue_ws, queue_row_num)
+
+    copied = copy_template_to_folder(
+        template_file_id=CONFIG["boq_template_spreadsheet_id"],
+        target_folder_id=quotes_folder["id"],
+        new_name=file_name
+    )
+
+    write_project_details(
+        copied["id"],
+        {
+            "Lead_ID": lead_id,
+            "Request_ID": request_id_val,
+            "Client_Name": client_name,
+            "BOQ_Type": boq_type,
+            "Category": category,
+            "Scope": scope,
+            "Prepared_By": prepared_by,
+            "Date": now_str(),
+            "Revision_No": revision_no,
+            "Dimming_Type": dimming_type,
+        }
+    )
+
+    update_row_fields(queue_ws, queue_row_num, {
+        "BOQ_ID": boq_id,
+        "BOQ_Link": copied["webViewLink"],
+        "Revision_No": revision_no,
+        "Generated_File_Name": file_name,
+        "Status": "Created",
+        "Error_Message": "",
+    })
+
+    return {
+        "success": True,
+        "request_id": request_id_val,
+        "lead_id": lead_id,
+        "boq_id": boq_id,
+        "revision_no": revision_no,
+        "file_id": copied["id"],
+        "boq_link": copied["webViewLink"],
+        "generated_file_name": file_name,
+    }
+
+
+# ==========================================================
+# GENERATE STAGE
+# ==========================================================
+def generate_architectural_boq(
+    request_id: Optional[str],
+    row_number: Optional[int],
+    user_name: str
+) -> Dict[str, Any]:
+    _, queue_ws = get_ws_by_spreadsheet_name(
+        CONFIG["crm_spreadsheet_name"],
+        CONFIG["crm_boq_queue_sheet"]
+    )
+    queue_row_num, row = find_row_by_request_or_row(queue_ws, request_id=request_id, row_number=row_number)
+
+    boq_link = safe_str(row.get("BOQ_Link"))
+    boq_id = safe_str(row.get("BOQ_ID"))
+    generated_file_name = safe_str(row.get("Generated_File_Name"))
+    revision_no = int(float(row.get("Revision_No") or 1))
+    request_id_val = safe_str(row.get("Request_ID"))
+
+    file_id = parse_drive_id(boq_link)
+    if not file_id:
+        raise ValueError("BOQ file link missing. Run create first.")
+
+    write_queue_processing(queue_ws, queue_row_num)
+
+    price_map = load_arch_price_map()
+    oem_map = load_oem_map()
+
+    rows_out, grand_total = generate_arch_breakdown_rows(file_id, price_map, oem_map)
+    write_arch_breakdown(file_id, rows_out, grand_total)
+    write_summary(file_id, grand_total)
+
+    write_queue_success(
+        queue_ws,
+        queue_row_num,
+        boq_id=boq_id,
+        boq_link=boq_link,
+        revision_no=revision_no,
+        generated_file_name=generated_file_name,
+    )
+
+    return {
+        "success": True,
+        "request_id": request_id_val,
+        "boq_id": boq_id,
+        "boq_link": boq_link,
+        "rows_generated": len(rows_out),
+        "grand_total": grand_total,
+    }
+
+
+# ==========================================================
+# ONE-CLICK RUN
+# ==========================================================
+def run_architectural_boq(
+    request_id: Optional[str],
+    row_number: Optional[int],
+    user_name: str
+) -> Dict[str, Any]:
+    created = create_architectural_boq_file(
+        request_id=request_id,
+        row_number=row_number,
+        user_name=user_name
+    )
+    generated = generate_architectural_boq(
+        request_id=request_id,
+        row_number=row_number,
+        user_name=user_name
+    )
+    return {
+        "success": True,
+        "create": created,
+        "generate": generated,
+    }
+
+
+# ==========================================================
+# ROUTES
+# ==========================================================
+@app.get("/")
+def root():
+    return {"message": "Moorgen BOQ backend running"}
+
+
+@app.get("/health")
+def health():
+    return {"ok": True}
+
+
+@app.post("/boq/architectural/create")
+def boq_arch_create(req: ArchitecturalBoqRequest):
+    try:
+        return create_architectural_boq_file(
+            request_id=req.request_id,
+            row_number=req.row_number,
+            user_name=req.user_name,
+        )
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/boq/architectural/generate")
+def boq_arch_generate(req: ArchitecturalBoqRequest):
+    try:
+        return generate_architectural_boq(
+            request_id=req.request_id,
+            row_number=req.row_number,
+            user_name=req.user_name,
+        )
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/boq/architectural/run")
+def boq_arch_run(req: ArchitecturalBoqRequest):
+    try:
+        return run_architectural_boq(
+            request_id=req.request_id,
+            row_number=req.row_number,
+            user_name=req.user_name,
+        )
+    except Exception as e:
+        return {"success": False, "error": str(e)}
