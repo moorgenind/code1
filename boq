@@ -9,9 +9,6 @@ from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 
-# ==========================================================
-# CONFIG
-# ==========================================================
 CRM_SPREADSHEET_NAME = "Moorgen_CRM"
 BOQ_QUEUE_SHEET_NAME = "BOQ_Request_Queue"
 
@@ -24,10 +21,6 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 
-
-# ==========================================================
-# FASTAPI
-# ==========================================================
 app = FastAPI()
 
 
@@ -50,9 +43,6 @@ class ErrorUpdateRequest(BaseModel):
     status: str = "Error"
 
 
-# ==========================================================
-# AUTH
-# ==========================================================
 def get_google_creds():
     creds = None
 
@@ -77,9 +67,6 @@ creds = get_google_creds()
 gc = gspread.authorize(creds)
 
 
-# ==========================================================
-# HELPERS
-# ==========================================================
 def safe_str(value: Any) -> str:
     return "" if value is None else str(value).strip()
 
@@ -108,7 +95,7 @@ def update_row_fields(ws, row_number: int, updates: Dict[str, Any]):
         ws.update_cells(cells, value_input_option="USER_ENTERED")
 
 
-def find_request_row(ws, request_id: str) -> Optional[int]:
+def find_request_row(ws, request_id: str):
     records = ws.get_all_records()
     for idx, row in enumerate(records, start=2):
         if safe_str(row.get("Request_ID")) == safe_str(request_id):
@@ -116,14 +103,7 @@ def find_request_row(ws, request_id: str) -> Optional[int]:
     return None
 
 
-def write_log(message: str):
-    print(message)
-
-
-# ==========================================================
-# CORE LOGIC
-# ==========================================================
-def update_boq_request_row(payload: BoqUpdateRequest) -> Dict[str, Any]:
+def update_boq_request_row(payload: BoqUpdateRequest):
     ss = gc.open(CRM_SPREADSHEET_NAME)
     ws = ss.worksheet(BOQ_QUEUE_SHEET_NAME)
 
@@ -143,13 +123,6 @@ def update_boq_request_row(payload: BoqUpdateRequest) -> Dict[str, Any]:
         "Error_Message": payload.error_message or "",
     })
 
-    write_log(
-        f"[BOQ UPDATE] Request_ID={payload.request_id} "
-        f"Lead_ID={payload.lead_id} "
-        f"BOQ_ID={payload.boq_id} "
-        f"Status={payload.status}"
-    )
-
     return {
         "success": True,
         "request_id": payload.request_id,
@@ -161,7 +134,7 @@ def update_boq_request_row(payload: BoqUpdateRequest) -> Dict[str, Any]:
     }
 
 
-def mark_boq_request_error(payload: ErrorUpdateRequest) -> Dict[str, Any]:
+def mark_boq_request_error(payload: ErrorUpdateRequest):
     ss = gc.open(CRM_SPREADSHEET_NAME)
     ws = ss.worksheet(BOQ_QUEUE_SHEET_NAME)
 
@@ -177,12 +150,6 @@ def mark_boq_request_error(payload: ErrorUpdateRequest) -> Dict[str, Any]:
         "Error_Message": payload.error_message,
     })
 
-    write_log(
-        f"[BOQ ERROR] Request_ID={payload.request_id} "
-        f"Status={payload.status} "
-        f"Error={payload.error_message}"
-    )
-
     return {
         "success": True,
         "request_id": payload.request_id,
@@ -192,9 +159,6 @@ def mark_boq_request_error(payload: ErrorUpdateRequest) -> Dict[str, Any]:
     }
 
 
-# ==========================================================
-# ROUTES
-# ==========================================================
 @app.get("/")
 def root():
     return {"message": "Moorgen CRM sync backend running"}
