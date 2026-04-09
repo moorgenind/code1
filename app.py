@@ -36,7 +36,6 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 
-# PUT YOUR REAL DRIVE PARENT FOLDER ID HERE
 LEADS_PARENT_FOLDER_ID = "1jjZK0PPOyHfCFmSY9CWcxr8eoDsfaIR2"
 
 REQUIRED_FIELDS = [
@@ -69,6 +68,25 @@ class UserRequest(BaseModel):
 class RowRequest(BaseModel):
     user_name: str = "Moorgen User"
     row_number: int
+
+
+class BoqUpdateRequest(BaseModel):
+    user_name: str = "Moorgen User"
+    request_id: str
+    lead_id: Optional[str] = ""
+    boq_id: str
+    boq_link: str
+    revision_no: Optional[int] = 1
+    status: str = "Done"
+    generated_file_name: Optional[str] = ""
+    error_message: Optional[str] = ""
+
+
+class ErrorUpdateRequest(BaseModel):
+    user_name: str = "Moorgen User"
+    request_id: str
+    error_message: str
+    status: str = "Error"
 
 
 # =========================================
@@ -946,6 +964,74 @@ def process_all_order_confirmations(user_name: str = "Moorgen Auto") -> Dict[str
 
 
 # =========================================
+# BOQ CRM SYNC
+# =========================================
+def find_request_row(ws, request_id: str) -> Optional[int]:
+    records = ws.get_all_records()
+    for idx, row in enumerate(records, start=2):
+        if safe_str(row.get("Request_ID")) == safe_str(request_id):
+            return idx
+    return None
+
+
+def update_boq_request_row(payload: BoqUpdateRequest) -> Dict[str, Any]:
+    row_number = find_request_row(boq_queue_ws, payload.request_id)
+    if not row_number:
+        return {
+            "success": False,
+            "error": f"Request_ID not found: {payload.request_id}"
+        }
+
+    updates = {
+        "BOQ_ID": payload.boq_id,
+        "BOQ_Link": payload.boq_link,
+        "Status": payload.status,
+        "Error_Message": payload.error_message or "",
+    }
+
+    # Only update these if the columns exist in your BOQ_Request_Queue
+    col_map = get_column_index_map(boq_queue_ws)
+    if "Revision_No" in col_map:
+        updates["Revision_No"] = payload.revision_no
+    if "Generated_File_Name" in col_map:
+        updates["Generated_File_Name"] = payload.generated_file_name
+
+    update_row_fields(boq_queue_ws, row_number, updates)
+
+    return {
+        "success": True,
+        "request_id": payload.request_id,
+        "row_number": row_number,
+        "boq_id": payload.boq_id,
+        "boq_link": payload.boq_link,
+        "revision_no": payload.revision_no,
+        "status": payload.status,
+    }
+
+
+def mark_boq_request_error(payload: ErrorUpdateRequest) -> Dict[str, Any]:
+    row_number = find_request_row(boq_queue_ws, payload.request_id)
+    if not row_number:
+        return {
+            "success": False,
+            "error": f"Request_ID not found: {payload.request_id}"
+        }
+
+    update_row_fields(boq_queue_ws, row_number, {
+        "Status": payload.status,
+        "Error_Message": payload.error_message,
+    })
+
+    return {
+        "success": True,
+        "request_id": payload.request_id,
+        "row_number": row_number,
+        "status": payload.status,
+        "error_message": payload.error_message,
+    }
+
+
+# =========================================
 # API ROUTES
 # =========================================
 @app.get("/")
@@ -1000,5 +1086,21 @@ def process_post_lead_row(req: RowRequest):
 def process_order_confirmations(req: UserRequest):
     try:
         return process_all_order_confirmations(user_name=req.user_name)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/boq/update-crm")
+def boq_update_crm(payload: BoqUpdateRequest):
+    try:
+        return update_boq_request_row(payload)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/boq/mark-error")
+def boq_mark_error(payload: ErrorUpdateRequest):
+    try:
+        return mark_boq_request_error(payload)
     except Exception as e:
         return {"success": False, "error": str(e)}
