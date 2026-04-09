@@ -8,7 +8,6 @@ from pydantic import BaseModel
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-
 CRM_SPREADSHEET_NAME = "Moorgen_CRM"
 BOQ_QUEUE_SHEET_NAME = "BOQ_Request_Queue"
 
