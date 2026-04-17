@@ -32,7 +32,25 @@ def get_google_creds():
 
 
 def get_drive_service():
-    creds = get_google_creds()
+    token_b64 = os.getenv("GOOGLE_TOKEN_BASE64")
+
+    if token_b64:
+        import base64
+        import pickle
+        from google.auth.transport.requests import Request
+        creds = pickle.loads(base64.b64decode(token_b64))
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+    else:
+        import pickle
+        from google.auth.transport.requests import Request
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        TOKEN_FILE = os.path.join(BASE_DIR, "..", "token.pickle")
+        with open(TOKEN_FILE, "rb") as token:
+            creds = pickle.load(token)
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+
     return build("drive", "v3", credentials=creds)
 
 
