@@ -1,0 +1,201 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from datetime import datetime
+from typing import List
+import sys
+import os
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from app.database import get_db
+from app import models, schemas
+from app.drive import create_lead_folder_structure
+
+router = APIRouter()
+
+
+# =========================================
+# HELPERS
+# =========================================
+def generate_lead_code(db: Session) -> str:
+    year = datetime.now().year
+    short_year = str(year)[2:]
+    next_year_short = str(year + 1)[2:]
+    prefix = f"LD-{short_year}{next_year_short}"
+
+    count = db.query(models.Lead).count()
+    number = str(count + 1).zfill(3)
+    return f"{prefix}-{number}"
+
+
+def generate_boq_code(db: Session) -> str:
+    year = datetime.now().year
+    short_year = str(year)[2:]
+    next_year_short = str(year + 1)[2:]
+    prefix = f"BOQ-{short_year}{next_year_short}"
+
+    count = db.query(models.Boq).count()
+    number = str(count + 1).zfill(3)
+    return f"{prefix}-{number}"
+
+
+def generate_design_code(db: Session) -> str:
+    year = datetime.now().year
+    short_year = str(year)[2:]
+    next_year_short = str(year + 1)[2:]
+    prefix = f"DSG-{short_year}{next_year_short}"
+
+    count = db.query(models.DesignRequest).count()
+    number = str(count + 1).zfill(3)
+    return f"{prefix}-{number}"
+
+
+# =========================================
+# ROUTES
+# =========================================
+@router.get("/", response_model=List[schemas.LeadResponse])
+def list_leads(
+    status: str = None,
+    city: str = None,
+    channel: str = None,
+    db: Session = Depends(get_db)
+):
+    query = db.query(models.Lead)
+
+    if status:
+        query = query.filter(models.Lead.status == status)
+    if city:
+        query = query.filter(models.Lead.city == city)
+    if channel:
+        query = query.filter(models.Lead.channel == channel)
+
+    return query.order_by(models.Lead.created_at.desc()).all()
+
+
+@router.get("/{lead_id}", response_model=schemas.LeadResponse)
+def get_lead(lead_id: int, db: Session = Depends(get_db)):
+    lead = db.query(models.Lead).filter(models.Lead.lead_id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return lead
+
+
+@router.post("/", response_model=schemas.LeadResponse)
+def create_lead(payload: schemas.LeadCreate, db: Session = Depends(get_db)):
+    # Generate lead code
+    lead_code = generate_lead_code(db)
+
+    # Create lead in DB
+    lead = models.Lead(
+        lead_code=lead_code,
+        client_id=payload.client_id,
+        dealer_id=payload.dealer_id,
+        project_name=payload.project_name,
+        city=payload.city,
+        channel=payload.channel,
+        category=payload.category,
+        lead_source=payload.lead_source,
+        assigned_to=payload.assigned_to,
+        remarks=payload.remarks,
+        status="new",
+    )
+
+    db.add(lead)
+    db.flush()  # get lead_id before commit
+
+    # Create Google Drive folder
+    try:
+        client = db.query(models.Client).filter(
+            models.Client.client_id == payload.client_id
+        ).first()
+        client_name = client.name if client else "Client"
+
+        drive_result = create_lead_folder_structure(
+            lead_code=lead_code,
+            client_name=client_name,
+            project_name=payload.project_name,
+            city=payload.city or "",
+        )
+        lead.drive_folder_url = drive_result["main_folder_link"]
+    except Exception as e:
+        # Don't fail lead creation if Drive fails
+        print(f"Drive folder creation failed: {e}")
+
+    # Auto-create BOQs based on scope flags
+    boq_categories = []
+    if payload.arch_lighting:
+        boq_categories.append("architectural")
+    if payload.decorative_lighting:
+        boq_categories.append("decorative")
+    if payload.automation:
+        boq_categories.append("automation")
+    if payload.exterior_lighting:
+        boq_categories.append("exterior")
+
+    for category in boq_categories:
+        boq_code = generate_boq_code(db)
+        boq = models.Boq(
+            boq_code=boq_code,
+            lead_id=lead.lead_id,
+            category=category,
+            version=1,
+            status="draft",
+        )
+        db.add(boq)
+
+    # Auto-create design requests if needed
+    if payload.design_required:
+        if payload.arch_lighting:
+            design_code = generate_design_code(db)
+            db.add(models.DesignRequest(
+                design_code=design_code,
+                lead_id=lead.lead_id,
+                request_type="lighting_layout",
+                status="pending",
+            ))
+        if payload.automation:
+            design_code = generate_design_code(db)
+            db.add(models.DesignRequest(
+                design_code=design_code,
+                lead_id=lead.lead_id,
+                request_type="automation_proposal",
+                status="pending",
+            ))
+
+    # Update lead status
+    if boq_categories:
+        lead.status = "boq_in_progress"
+
+    db.commit()
+    db.refresh(lead)
+    return lead
+
+
+@router.patch("/{lead_id}/status", response_model=schemas.LeadResponse)
+def update_lead_status(
+    lead_id: int,
+    payload: schemas.LeadStatusUpdate,
+    db: Session = Depends(get_db)
+):
+    lead = db.query(models.Lead).filter(models.Lead.lead_id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    lead.status = payload.status
+    if payload.lost_reason:
+        lead.lost_reason = payload.lost_reason
+
+    db.commit()
+    db.refresh(lead)
+    return lead
+
+
+@router.delete("/{lead_id}")
+def delete_lead(lead_id: int, db: Session = Depends(get_db)):
+    lead = db.query(models.Lead).filter(models.Lead.lead_id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    db.delete(lead)
+    db.commit()
+    return {"success": True, "message": f"Lead {lead_id} deleted"}
