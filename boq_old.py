@@ -1,0 +1,184 @@
+import os
+import pickle
+from typing import Any, Dict, Optional
+
+import gspread
+from fastapi import FastAPI
+from pydantic import BaseModel
+from google.auth.transport.requests import Request
+from google_auth_oauthlib.flow import InstalledAppFlow
+
+CRM_SPREADSHEET_NAME = "Moorgen_CRM"
+BOQ_QUEUE_SHEET_NAME = "BOQ_Request_Queue"
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+OAUTH_FILE = os.path.join(BASE_DIR, "oauth_credentials.json")
+TOKEN_FILE = os.path.join(BASE_DIR, "token.pickle")
+
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+]
+
+app = FastAPI()
+
+
+class BoqUpdateRequest(BaseModel):
+    user_name: str = "Moorgen User"
+    request_id: str
+    lead_id: Optional[str] = ""
+    boq_id: str
+    boq_link: str
+    revision_no: Optional[int] = 1
+    status: str = "Done"
+    generated_file_name: Optional[str] = ""
+    error_message: Optional[str] = ""
+
+
+class ErrorUpdateRequest(BaseModel):
+    user_name: str = "Moorgen User"
+    request_id: str
+    error_message: str
+    status: str = "Error"
+
+
+def get_google_creds():
+    creds = None
+
+    if os.path.exists(TOKEN_FILE):
+        with open(TOKEN_FILE, "rb") as token:
+            creds = pickle.load(token)
+
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(OAUTH_FILE, SCOPES)
+            creds = flow.run_local_server(port=0)
+
+        with open(TOKEN_FILE, "wb") as token:
+            pickle.dump(creds, token)
+
+    return creds
+
+
+creds = get_google_creds()
+gc = gspread.authorize(creds)
+
+
+def safe_str(value: Any) -> str:
+    return "" if value is None else str(value).strip()
+
+
+def get_headers(ws):
+    return [safe_str(h) for h in ws.row_values(1)]
+
+
+def get_column_index_map(ws) -> Dict[str, int]:
+    headers = get_headers(ws)
+    return {header: idx + 1 for idx, header in enumerate(headers)}
+
+
+def update_row_fields(ws, row_number: int, updates: Dict[str, Any]):
+    col_map = get_column_index_map(ws)
+    cells = []
+
+    for field, value in updates.items():
+        if field not in col_map:
+            continue
+        cell = ws.cell(row_number, col_map[field])
+        cell.value = value
+        cells.append(cell)
+
+    if cells:
+        ws.update_cells(cells, value_input_option="USER_ENTERED")
+
+
+def find_request_row(ws, request_id: str):
+    records = ws.get_all_records()
+    for idx, row in enumerate(records, start=2):
+        if safe_str(row.get("Request_ID")) == safe_str(request_id):
+            return idx
+    return None
+
+
+def update_boq_request_row(payload: BoqUpdateRequest):
+    ss = gc.open(CRM_SPREADSHEET_NAME)
+    ws = ss.worksheet(BOQ_QUEUE_SHEET_NAME)
+
+    row_number = find_request_row(ws, payload.request_id)
+    if not row_number:
+        return {
+            "success": False,
+            "error": f"Request_ID not found: {payload.request_id}"
+        }
+
+    update_row_fields(ws, row_number, {
+        "BOQ_ID": payload.boq_id,
+        "BOQ_Link": payload.boq_link,
+        "Revision_No": payload.revision_no,
+        "Generated_File_Name": payload.generated_file_name,
+        "Status": payload.status,
+        "Error_Message": payload.error_message or "",
+    })
+
+    return {
+        "success": True,
+        "request_id": payload.request_id,
+        "row_number": row_number,
+        "boq_id": payload.boq_id,
+        "boq_link": payload.boq_link,
+        "revision_no": payload.revision_no,
+        "status": payload.status,
+    }
+
+
+def mark_boq_request_error(payload: ErrorUpdateRequest):
+    ss = gc.open(CRM_SPREADSHEET_NAME)
+    ws = ss.worksheet(BOQ_QUEUE_SHEET_NAME)
+
+    row_number = find_request_row(ws, payload.request_id)
+    if not row_number:
+        return {
+            "success": False,
+            "error": f"Request_ID not found: {payload.request_id}"
+        }
+
+    update_row_fields(ws, row_number, {
+        "Status": payload.status,
+        "Error_Message": payload.error_message,
+    })
+
+    return {
+        "success": True,
+        "request_id": payload.request_id,
+        "row_number": row_number,
+        "status": payload.status,
+        "error_message": payload.error_message,
+    }
+
+
+@app.get("/")
+def root():
+    return {"message": "Moorgen CRM sync backend running"}
+
+
+@app.get("/health")
+def health():
+    return {"ok": True}
+
+
+@app.post("/boq/update-crm")
+def boq_update_crm(payload: BoqUpdateRequest):
+    try:
+        return update_boq_request_row(payload)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/boq/mark-error")
+def boq_mark_error(payload: ErrorUpdateRequest):
+    try:
+        return mark_boq_request_error(payload)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
