@@ -194,6 +194,23 @@ def update_lead_status(
     return lead
 
 
+@router.patch("/{lead_id}", response_model=schemas.LeadResponse)
+def update_lead(lead_id: int, payload: schemas.LeadCreate, db: Session = Depends(get_db)):
+    lead = db.query(models.Lead).filter(models.Lead.lead_id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    for field, value in payload.dict(exclude_unset=True).items():
+        if field in ['arch_lighting', 'decorative_lighting', 'automation', 'exterior_lighting', 'mechanical_switches', 'smart_locks', 'design_required']:
+            continue
+        if hasattr(lead, field):
+            setattr(lead, field, value)
+
+    db.commit()
+    db.refresh(lead)
+    return lead
+
+
 @router.delete("/{lead_id}")
 def delete_lead(lead_id: int, db: Session = Depends(get_db)):
     lead = db.query(models.Lead).filter(models.Lead.lead_id == lead_id).first()
