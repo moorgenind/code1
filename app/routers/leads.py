@@ -97,6 +97,10 @@ def create_lead(payload: schemas.LeadCreate, db: Session = Depends(get_db)):
         lead_source=payload.lead_source,
         assigned_to=payload.assigned_to,
         remarks=payload.remarks,
+        client_name=payload.client_name,
+        client_phone=payload.client_phone,
+        client_email=payload.client_email,
+        client_address=payload.client_address,
         status="new",
     )
 

@@ -70,6 +70,10 @@ class LeadCreate(BaseModel):
     lead_source: Optional[str] = None
     assigned_to: Optional[str] = None
     remarks: Optional[str] = None
+    client_name: Optional[str] = None
+    client_phone: Optional[str] = None
+    client_email: Optional[str] = None
+    client_address: Optional[str] = None
 
     # Scope flags — determines what BOQs and design requests get created
     arch_lighting: bool = False
@@ -99,6 +103,10 @@ class LeadResponse(BaseModel):
     lost_reason: Optional[str]
     drive_folder_url: Optional[str]
     remarks: Optional[str]
+    client_name: Optional[str]
+    client_phone: Optional[str]
+    client_email: Optional[str]
+    client_address: Optional[str]
     created_at: datetime
     updated_at: datetime
 

@@ -71,6 +71,10 @@ class Lead(Base):
     lost_reason = Column(Text)
     drive_folder_url = Column(Text)
     remarks = Column(Text)
+    client_name = Column(String(255))
+    client_phone = Column(String(20))
+    client_email = Column(String(255))
+    client_address = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
