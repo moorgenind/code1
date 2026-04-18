@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine
 from app import models
-from app.routers import leads, boqs, design
+from app.routers import leads, boqs, design, products
 
 load_dotenv()
 
@@ -30,3 +30,4 @@ def health():
 app.include_router(leads.router, prefix="/leads", tags=["Leads"])
 app.include_router(boqs.router, prefix="/boqs", tags=["BOQs"])
 app.include_router(design.router, prefix="/design", tags=["Design Requests"])
+app.include_router(products.router, prefix="/products", tags=["Products"])
