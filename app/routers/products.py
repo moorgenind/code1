@@ -14,6 +14,23 @@ except Exception as e:
     def _get_image_url(*args, **kwargs):
         return None
 
+try:
+    from app.dec_image_map import DEC_IMAGE_MAP
+except Exception as e:
+    print(f"dec_image_map import failed: {e}")
+    DEC_IMAGE_MAP = {}
+
+import re as _re
+
+def _get_dec_image_url(sku: str):
+    match = _re.search(r'DEC-([A-Z]\d+)', sku)
+    if match:
+        series = match.group(1)
+        file_id = DEC_IMAGE_MAP.get(series)
+        if file_id:
+            return f"https://drive.google.com/thumbnail?id={file_id}&sz=w200"
+    return None
+
 router = APIRouter()
 
 def build_auto_description(p):
@@ -167,11 +184,14 @@ def image_by_sku(sku: str, db: Session = Depends(get_db)):
     if not product:
         from fastapi import Response
         return Response(status_code=404)
-    url = _get_image_url(product.family, product.name, product.body_color, product.trim)
+    # Try decorative first
+    if sku.startswith("DEC-"):
+        url = _get_dec_image_url(sku)
+    else:
+        url = _get_image_url(product.family, product.name, product.body_color, product.trim)
     if not url:
         from fastapi import Response
         return Response(status_code=404)
-    # Redirect to the thumbnail URL
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url=url)
 
