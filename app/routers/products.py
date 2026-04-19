@@ -9,6 +9,32 @@ from app import models
 
 router = APIRouter()
 
+def build_auto_description(p):
+    """Build a clean one-line description from key product attributes."""
+    parts = []
+    if p.family:
+        parts.append(str(p.family))
+    if p.cct:
+        parts.append(f"CCT: {p.cct}")
+    if p.beam_angle:
+        parts.append(f"Beam: {p.beam_angle}")
+    if p.power:
+        parts.append(f"Power: {p.power}")
+    if p.voltage:
+        parts.append(f"Voltage: {p.voltage}")
+    if p.current:
+        parts.append(f"Current: {p.current}")
+    if p.body_color:
+        parts.append(f"Body: {p.body_color}")
+    if p.led_chip:
+        parts.append(f"LED: {p.led_chip}")
+    if p.cri:
+        parts.append(f"CRI: {p.cri}")
+    if p.cutout_size:
+        parts.append(f"Cutout: {p.cutout_size}mm")
+    return " | ".join(parts) if parts else ""
+
+
 
 class ProductResponse(BaseModel):
     product_id: int
@@ -106,6 +132,7 @@ def get_architectural_filters(
                 "dealer_mrp": float(p.dealer_mrp) if p.dealer_mrp else None,
                 "specification": p.specification,
                 "description": p.description,
+                "auto_description": build_auto_description(p),
             }
             for p in products[:50]
         ],
