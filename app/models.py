@@ -42,14 +42,35 @@ class Client(Base):
 
 class Product(Base):
     __tablename__ = "products"
-
     product_id = Column(Integer, primary_key=True, index=True)
     sku = Column(String(100), unique=True)
     name = Column(String(255), nullable=False)
-    category = Column(String(100))  # architectural / decorative / automation / exterior
+    category = Column(String(100))
     subcategory = Column(String(100))
     unit_price = Column(Numeric(10, 2))
     is_active = Column(Boolean, default=True)
+    family = Column(String(255))
+    family_no = Column(String(100))
+    model_no = Column(String(100))
+    product_type = Column(String(100))
+    trim = Column(String(50))
+    cutout_size = Column(String(50))
+    cct = Column(String(100))
+    beam_angle = Column(String(50))
+    power = Column(String(50))
+    voltage = Column(String(50))
+    current = Column(String(50))
+    body_color = Column(String(50))
+    cup_color = Column(String(50))
+    led_chip = Column(String(100))
+    cri = Column(String(50))
+    adjustable_angle = Column(String(50))
+    mrp_gst = Column(Numeric(12, 2))
+    flagship_mrp = Column(Numeric(12, 2))
+    dealer_mrp = Column(Numeric(12, 2))
+    landing_inr = Column(Numeric(12, 2))
+    specification = Column(Text)
+    description = Column(Text)
 
 
 class Lead(Base):
