@@ -7,6 +7,12 @@ from decimal import Decimal
 
 from app.database import get_db
 from app import models
+try:
+    from app.image_map import get_image_url as _get_image_url
+except Exception as e:
+    print(f"image_map import failed: {e}")
+    def _get_image_url(*args, **kwargs):
+        return None
 
 router = APIRouter()
 
@@ -134,6 +140,7 @@ def get_architectural_filters(
                 "specification": p.specification,
                 "description": p.description,
                 "auto_description": build_auto_description(p),
+                "image_url": _get_image_url(p.family, p.name, p.body_color, p.trim),
             }
             for p in products[:50]
         ],
