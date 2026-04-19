@@ -104,6 +104,8 @@ def get_architectural_filters(
                 "mrp_gst": float(p.mrp_gst) if p.mrp_gst else None,
                 "flagship_mrp": float(p.flagship_mrp) if p.flagship_mrp else None,
                 "dealer_mrp": float(p.dealer_mrp) if p.dealer_mrp else None,
+                "specification": p.specification,
+                "description": p.description,
             }
             for p in products[:50]
         ],
