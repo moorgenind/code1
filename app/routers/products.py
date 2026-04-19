@@ -158,3 +158,19 @@ def image_proxy(file_id: str):
         return Response(content=resp.content, media_type=content_type)
     except Exception as e:
         return Response(status_code=404)
+
+
+@router.get("/image-proxy-sku")
+def image_by_sku(sku: str, db: Session = Depends(get_db)):
+    """Return image URL for a product SKU."""
+    product = db.query(models.Product).filter(models.Product.sku == sku).first()
+    if not product:
+        from fastapi import Response
+        return Response(status_code=404)
+    url = _get_image_url(product.family, product.name, product.body_color, product.trim)
+    if not url:
+        from fastapi import Response
+        return Response(status_code=404)
+    # Redirect to the thumbnail URL
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=url)
