@@ -127,40 +127,84 @@ def sync_products():
         print(f"❌ Architectural error: {e}")
         conn.rollback()
 
-    # ============ DECORATIVE (basic - enrich later) ============
+    # ============ DECORATIVE (detailed) ============
     try:
         ws = spreadsheet.worksheet("Product_Database - Decorative Lighting")
         rows = sheet_to_dicts(ws)
         dec_products = []
+
+        def clean_price(val):
+            if not val:
+                return None
+            cleaned = str(val).replace(",", "").strip()
+            for ch in ["₹", "Rs", "$"]:
+                cleaned = cleaned.replace(ch, "")
+            return safe_float(cleaned.strip())
 
         for row in rows:
             raw_sku = clean_str(row.get("model_no"))
             name = clean_str(row.get("Description"), 255)
             if not raw_sku or not name:
                 continue
-
             sku = f"DEC-{raw_sku}"
             if sku in seen_skus:
                 continue
             seen_skus.add(sku)
 
+            mrp_val = clean_price(row.get("MRP (incl. of GST)"))
+
             dec_products.append((
                 sku, name, "decorative",
                 clean_str(row.get("series"), 100),
-                safe_float(row.get("MRP (incl. of GST)")),
-                True,
+                mrp_val, True,
+                clean_str(row.get("series"), 255),
+                None,
+                clean_str(row.get("model_no"), 100),
+                clean_str(row.get("Type"), 100),
+                None, None,
+                clean_str(row.get("Color Temperature"), 100),
+                None,
+                clean_str(row.get("Total Lamp Power"), 50),
+                None, None, None, None,
+                clean_str(row.get("Light Source"), 100),
+                clean_str(row.get("CRI (Color Rendering Index)"), 50),
+                None,
+                mrp_val,
+                clean_price(row.get("Flagship Cost")),
+                clean_price(row.get("Suggested Dealer Cost")),
+                safe_float(row.get("landing")),
+                clean_str(row.get("Technical Data")),
+                clean_str(row.get("DESCRIPTION")),
+                clean_str(row.get("Type"), 100),
+                clean_str(row.get("Material"), 255),
+                clean_str(row.get("Product Dimensions"), 255),
+                clean_str(row.get("Protocol"), 100),
+                clean_str(row.get("Total Lamp Power"), 50),
+                mrp_val,
+                clean_price(row.get("Suggested Dealer Cost")),
+                clean_price(row.get("Flagship Cost")),
             ))
 
-        psycopg2.extras.execute_values(cur, """
-            INSERT INTO products (sku, name, category, subcategory, unit_price, is_active)
-            VALUES %s
-        """, dec_products)
+        insert_sql = (
+            "INSERT INTO products ("
+            "sku, name, category, subcategory, unit_price, is_active,"
+            "family, family_no, model_no, product_type, trim, cutout_size,"
+            "cct, beam_angle, power, voltage, current, body_color, cup_color,"
+            "led_chip, cri, adjustable_angle, mrp_gst, flagship_mrp, dealer_mrp,"
+            "landing_inr, specification, description,"
+            "product_type2, material, dimensions, protocol, total_power,"
+            "mrp_inr, dealer_cost, flagship_cost"
+            ") VALUES %s"
+        )
+        psycopg2.extras.execute_values(cur, insert_sql, dec_products)
         conn.commit()
         total += len(dec_products)
-        print(f"✅ Decorative: {len(dec_products)} products")
+        print(f"OK Decorative: {len(dec_products)} products with full attributes")
 
     except Exception as e:
-        print(f"❌ Decorative error: {e}")
+        import traceback
+        print(f"ERR Decorative: {e}")
+        traceback.print_exc()
         conn.rollback()
 
     # ============ ZIGBEE (basic - enrich later) ============

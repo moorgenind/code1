@@ -71,6 +71,15 @@ class Product(Base):
     landing_inr = Column(Numeric(12, 2))
     specification = Column(Text)
     description = Column(Text)
+    # Decorative / shared extra fields
+    product_type2 = Column(String(100))
+    material = Column(String(255))
+    dimensions = Column(String(255))
+    protocol = Column(String(100))
+    total_power = Column(String(50))
+    mrp_inr = Column(Numeric(12, 2))
+    dealer_cost = Column(Numeric(12, 2))
+    flagship_cost = Column(Numeric(12, 2))
 
 
 class Lead(Base):

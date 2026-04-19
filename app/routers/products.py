@@ -174,3 +174,58 @@ def image_by_sku(sku: str, db: Session = Depends(get_db)):
     # Redirect to the thumbnail URL
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url=url)
+
+
+@router.get("/filters/decorative")
+def get_decorative_filters(
+    product_type: str = None,
+    family: str = None,
+    material: str = None,
+    cct: str = None,
+    db: Session = Depends(get_db),
+):
+    """Cascading filter options for decorative lighting."""
+    query = db.query(models.Product).filter(models.Product.category == "decorative")
+
+    if product_type:
+        query = query.filter(models.Product.product_type == product_type)
+    if family:
+        query = query.filter(models.Product.family == family)
+    if material:
+        query = query.filter(models.Product.material == material)
+    if cct:
+        query = query.filter(models.Product.cct == cct)
+
+    products = query.all()
+
+    def unique(field):
+        vals = set()
+        for p in products:
+            v = getattr(p, field, None)
+            if v and str(v).strip() and str(v).strip() not in ("/", "#N/A"):
+                vals.add(str(v).strip())
+        return sorted(vals)
+
+    return {
+        "types": unique("product_type"),
+        "families": unique("family"),
+        "materials": unique("material"),
+        "ccts": unique("cct"),
+        "matches": [
+            {
+                "sku": p.sku,
+                "name": p.name,
+                "family": p.family,
+                "product_type": p.product_type,
+                "material": p.material,
+                "dimensions": p.dimensions,
+                "cct": p.cct,
+                "mrp_gst": float(p.mrp_gst) if p.mrp_gst else None,
+                "dealer_mrp": float(p.dealer_mrp) if p.dealer_mrp else None,
+                "description": p.description,
+                "specification": p.specification,
+            }
+            for p in products[:50]
+        ],
+        "total_matches": len(products),
+    }
