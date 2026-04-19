@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
+import requests as http_requests
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel
@@ -138,3 +139,15 @@ def get_architectural_filters(
         ],
         "total_matches": len(products),
     }
+
+
+@router.get("/image-proxy")
+def image_proxy(file_id: str):
+    """Proxy Google Drive images to avoid CORS issues."""
+    try:
+        url = f"https://drive.google.com/uc?export=view&id={file_id}"
+        resp = http_requests.get(url, timeout=10, allow_redirects=True)
+        content_type = resp.headers.get("Content-Type", "image/png")
+        return Response(content=resp.content, media_type=content_type)
+    except Exception as e:
+        return Response(status_code=404)
