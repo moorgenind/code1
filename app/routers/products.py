@@ -244,6 +244,7 @@ def get_decorative_filters(
                 "dealer_mrp": float(p.dealer_mrp) if p.dealer_mrp else None,
                 "description": p.description,
                 "specification": p.specification,
+                "image_url": _get_dec_image_url(p.sku),
             }
             for p in products[:50]
         ],
