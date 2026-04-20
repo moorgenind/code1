@@ -1,3 +1,4 @@
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy import (
     Column, Integer, String, Numeric, Boolean, 
     Text, DateTime, ForeignKey
@@ -19,6 +20,9 @@ class Dealer(Base):
     state = Column(String(100))
     status = Column(String(50), default="active")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    dealer_token = Column(String(255), unique=True, nullable=True)
+    portal_states = Column(ARRAY(String), nullable=True)
+    assigned_lead_ids = Column(ARRAY(Integer), nullable=True)
 
     clients = relationship("Client", back_populates="dealer")
     leads = relationship("Lead", back_populates="dealer")
