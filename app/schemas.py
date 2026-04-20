@@ -126,6 +126,7 @@ class BoqLineItemCreate(BaseModel):
     unit_price: Decimal
     discount_pct: Optional[Decimal] = Decimal("0")
     notes: Optional[str] = None
+    image_url: Optional[str] = None
 
 
 class BoqCreate(BaseModel):
@@ -152,6 +153,7 @@ class BoqLineItemResponse(BaseModel):
     discount_pct: Decimal
     line_total: Decimal
     notes: Optional[str]
+    image_url: Optional[str] = None
 
     class Config:
         from_attributes = True

@@ -113,6 +113,7 @@ def create_boq(payload: schemas.BoqCreate, db: Session = Depends(get_db)):
             discount_pct=item.discount_pct or Decimal("0"),
             line_total=line_total,
             notes=item.notes,
+        image_url=getattr(item, "image_url", None),
         )
         db.add(line_item)
 

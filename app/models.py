@@ -149,6 +149,7 @@ class BoqLineItem(Base):
     discount_pct = Column(Numeric(5, 2), default=0)
     line_total = Column(Numeric(12, 2))
     notes = Column(Text)
+    image_url = Column(Text, nullable=True)
 
     boq = relationship("Boq", back_populates="line_items")
 
