@@ -1,3 +1,4 @@
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, extract
@@ -19,6 +20,12 @@ def get_dealer_portal(
     dealer = db.query(models.Dealer).filter(models.Dealer.dealer_token == token).first()
     if not dealer:
         raise HTTPException(status_code=404, detail="Invalid portal link")
+
+    # Default: rolling 12 months if no filters specified
+    from datetime import timedelta
+    if not year and not month and not quarter:
+        twelve_months_ago = datetime.utcnow() - timedelta(days=365)
+        query = query.filter(models.Lead.created_at >= twelve_months_ago)
 
     # Build leads query — by state or manually assigned
     states = dealer.portal_states or []
@@ -42,6 +49,29 @@ def get_dealer_portal(
 
     leads = query.order_by(models.Lead.created_at.desc()).all()
 
+    # Compute summary metrics
+    total = len(leads)
+    by_status = {}
+    for l in leads:
+        by_status[l.status] = by_status.get(l.status, 0) + 1
+
+    active_leads = [l for l in leads if l.status not in ('lost',)]
+    lost_leads = [l for l in leads if l.status == 'lost']
+    won_leads = [l for l in leads if l.status == 'won']
+
+    pipeline_value = sum(float(b.total_amount or 0) for l in active_leads for b in l.boqs)
+    won_value = sum(float(b.total_amount or 0) for l in won_leads for b in l.boqs)
+    total_value = sum(float(b.total_amount or 0) for l in leads for b in l.boqs)
+
+    win_rate = round(len(won_leads) / total * 100) if total > 0 else 0
+    avg_project_size = round(pipeline_value / len(active_leads)) if active_leads else 0
+
+    # Category breakdown
+    by_category = {}
+    for l in leads:
+        cat = l.category or 'other'
+        by_category[cat] = by_category.get(cat, 0) + 1
+
     return {
         "dealer": {
             "dealer_id": dealer.dealer_id,
@@ -60,6 +90,7 @@ def get_dealer_portal(
                 "status": l.status,
                 "category": l.category,
                 "created_at": l.created_at.isoformat() if l.created_at else None,
+                "boq_value": sum(float(b.total_amount or 0) for b in l.boqs),
                 "boqs": [
                     {
                         "boq_id": b.boq_id,
@@ -88,12 +119,17 @@ def get_dealer_portal(
             for l in leads
         ],
         "summary": {
-            "total_leads": len(leads),
-            "by_status": {},
-            "total_boq_value": sum(
-                float(b.total_amount or 0)
-                for l in leads for b in l.boqs
-            )
+            "total_leads": total,
+            "active_leads": len(active_leads),
+            "won_leads": len(won_leads),
+            "lost_leads": len(lost_leads),
+            "win_rate": win_rate,
+            "pipeline_value": pipeline_value,
+            "won_value": won_value,
+            "total_boq_value": total_value,
+            "avg_project_size": avg_project_size,
+            "by_status": by_status,
+            "by_category": by_category,
         }
     }
 
