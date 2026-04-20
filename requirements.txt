@@ -10,3 +10,4 @@ pydantic
 psycopg2-binary
 sqlalchemy
 python-dotenv
+python-multipart
