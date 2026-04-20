@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
 from typing import List
@@ -222,3 +222,48 @@ def delete_line_item(
 
     db.commit()
     return {"success": True, "message": f"Line item {line_item_id} deleted"}
+
+
+BOQ_IMAGES_FOLDER_ID = "1HeXvo_bjGU6RooXz3aCWnyw74KpvEmZL"
+
+@router.post("/{boq_id}/line-items/{line_item_id}/image")
+async def upload_line_item_image(
+    boq_id: int,
+    line_item_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """Upload an image for a line item and store it in Drive."""
+    from app.drive import get_drive_service
+    from googleapiclient.http import MediaIoBaseUpload
+    import io
+
+    line_item = db.query(models.BoqLineItem).filter(
+        models.BoqLineItem.line_item_id == line_item_id,
+        models.BoqLineItem.boq_id == boq_id
+    ).first()
+    if not line_item:
+        raise HTTPException(status_code=404, detail="Line item not found")
+
+    contents = await file.read()
+    drive = get_drive_service()
+    media = MediaIoBaseUpload(io.BytesIO(contents), mimetype=file.content_type)
+    uploaded = drive.files().create(
+        body={"name": file.filename, "parents": [BOQ_IMAGES_FOLDER_ID]},
+        media_body=media,
+        fields="id",
+        supportsAllDrives=True
+    ).execute()
+
+    file_id = uploaded["id"]
+    # Make file publicly readable
+    drive.permissions().create(
+        fileId=file_id,
+        body={"role": "reader", "type": "anyone"},
+        supportsAllDrives=True
+    ).execute()
+
+    image_url = f"https://drive.google.com/thumbnail?id={file_id}&sz=w200"
+    line_item.image_url = image_url
+    db.commit()
+    return {"image_url": image_url}
