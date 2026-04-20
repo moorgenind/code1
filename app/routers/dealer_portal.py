@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, extract
@@ -16,18 +16,10 @@ def get_dealer_portal(
     year: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
-    # Validate token
     dealer = db.query(models.Dealer).filter(models.Dealer.dealer_token == token).first()
     if not dealer:
         raise HTTPException(status_code=404, detail="Invalid portal link")
 
-    # Default: rolling 12 months if no filters specified
-    from datetime import timedelta
-    if not year and not month and not quarter:
-        twelve_months_ago = datetime.utcnow() - timedelta(days=365)
-        query = query.filter(models.Lead.created_at >= twelve_months_ago)
-
-    # Build leads query — by state or manually assigned
     states = dealer.portal_states or []
     assigned_ids = dealer.assigned_lead_ids or []
 
@@ -39,7 +31,11 @@ def get_dealer_portal(
         )
     )
 
-    # Time filters
+    # Default: rolling 12 months if no filters specified
+    if not year and not month and not quarter:
+        twelve_months_ago = datetime.utcnow() - timedelta(days=365)
+        query = query.filter(models.Lead.created_at >= twelve_months_ago)
+
     if year:
         query = query.filter(extract('year', models.Lead.created_at) == year)
     if month:
@@ -49,24 +45,21 @@ def get_dealer_portal(
 
     leads = query.order_by(models.Lead.created_at.desc()).all()
 
-    # Compute summary metrics
     total = len(leads)
     by_status = {}
     for l in leads:
         by_status[l.status] = by_status.get(l.status, 0) + 1
 
-    active_leads = [l for l in leads if l.status not in ('lost',)]
+    active_leads = [l for l in leads if l.status != 'lost']
     lost_leads = [l for l in leads if l.status == 'lost']
     won_leads = [l for l in leads if l.status == 'won']
 
     pipeline_value = sum(float(b.total_amount or 0) for l in active_leads for b in l.boqs)
     won_value = sum(float(b.total_amount or 0) for l in won_leads for b in l.boqs)
     total_value = sum(float(b.total_amount or 0) for l in leads for b in l.boqs)
-
     win_rate = round(len(won_leads) / total * 100) if total > 0 else 0
     avg_project_size = round(pipeline_value / len(active_leads)) if active_leads else 0
 
-    # Category breakdown
     by_category = {}
     for l in leads:
         cat = l.category or 'other'
@@ -134,7 +127,6 @@ def get_dealer_portal(
     }
 
 def get_cities_for_states(states):
-    """Map states to their major cities."""
     city_map = {
         "Telangana": ["Hyderabad", "Warangal", "Nizamabad", "Karimnagar", "Khammam"],
         "Andhra Pradesh": ["Vijayawada", "Visakhapatnam", "Guntur", "Nellore", "Tirupati", "Kakinada", "Rajahmundry"],
