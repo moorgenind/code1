@@ -16,7 +16,9 @@ def get_dealer_portal(
     year: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
-    dealer = db.query(models.Dealer).filter(models.Dealer.dealer_token == token).first()
+    dealer = db.query(models.Dealer).filter(
+        (models.Dealer.dealer_token == token) | (models.Dealer.slug == token)
+    ).first()
     if not dealer:
         raise HTTPException(status_code=404, detail="Invalid portal link")
 

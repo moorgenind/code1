@@ -21,6 +21,7 @@ class Dealer(Base):
     status = Column(String(50), default="active")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     dealer_token = Column(String(255), unique=True, nullable=True)
+    slug = Column(String(100), unique=True, nullable=True)
     portal_states = Column(ARRAY(String), nullable=True)
     assigned_lead_ids = Column(ARRAY(Integer), nullable=True)
 
