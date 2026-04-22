@@ -188,3 +188,28 @@ class User(Base):
     role = Column(String(50), default="admin")
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class Invoice(Base):
+    __tablename__ = "invoices"
+    invoice_id = Column(Integer, primary_key=True, index=True)
+    invoice_code = Column(String(50), unique=True, nullable=False)
+    lead_id = Column(Integer, ForeignKey("leads.lead_id"))
+    boq_id = Column(Integer, ForeignKey("boqs.boq_id"), nullable=True)
+    invoice_amount = Column(Numeric(14,2), nullable=False)
+    status = Column(String(50), default="unpaid")
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    payments = relationship("Payment", back_populates="invoice")
+
+class Payment(Base):
+    __tablename__ = "payments"
+    payment_id = Column(Integer, primary_key=True, index=True)
+    invoice_id = Column(Integer, ForeignKey("invoices.invoice_id"))
+    payment_type = Column(String(50), nullable=False)
+    amount = Column(Numeric(14,2), nullable=False)
+    payment_date = Column(DateTime, nullable=False)
+    payment_mode = Column(String(50), nullable=True)
+    reference = Column(String(255), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    invoice = relationship("Invoice", back_populates="payments")
