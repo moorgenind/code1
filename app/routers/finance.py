@@ -11,11 +11,24 @@ from app import models
 router = APIRouter()
 
 # ── Schemas ──────────────────────────────────────────
+class InvoiceLineItemCreate(BaseModel):
+    sku: Optional[str] = None
+    product_name: Optional[str] = None
+    quantity: int
+    unit_price: Decimal
+    discount_pct: Optional[Decimal] = Decimal("0")
+    line_total: Decimal
+
 class InvoiceCreate(BaseModel):
     lead_id: int
     boq_id: Optional[int] = None
     invoice_amount: Decimal
+    pricing_tier: Optional[str] = "client"
+    discount_pct: Optional[Decimal] = Decimal("0")
+    subtotal: Optional[Decimal] = None
+    discount_amount: Optional[Decimal] = None
     notes: Optional[str] = None
+    line_items: Optional[List[InvoiceLineItemCreate]] = []
 
 class PaymentCreate(BaseModel):
     payment_type: str  # advance / balance / partial
@@ -81,9 +94,25 @@ def create_invoice(payload: InvoiceCreate, db: Session = Depends(get_db)):
         lead_id=payload.lead_id,
         boq_id=payload.boq_id,
         invoice_amount=payload.invoice_amount,
+        pricing_tier=payload.pricing_tier,
+        discount_pct=payload.discount_pct,
+        subtotal=payload.subtotal,
+        discount_amount=payload.discount_amount,
         notes=payload.notes,
     )
     db.add(invoice)
+    db.flush()
+    for item in payload.line_items:
+        li = models.InvoiceLineItem(
+            invoice_id=invoice.invoice_id,
+            sku=item.sku,
+            product_name=item.product_name,
+            quantity=item.quantity,
+            unit_price=item.unit_price,
+            discount_pct=item.discount_pct,
+            line_total=item.line_total,
+        )
+        db.add(li)
     db.commit()
     db.refresh(invoice)
     return {"invoice_id": invoice.invoice_id, "invoice_code": invoice.invoice_code}

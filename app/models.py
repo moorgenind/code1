@@ -200,6 +200,7 @@ class Invoice(Base):
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     payments = relationship("Payment", back_populates="invoice")
+    line_items = relationship("InvoiceLineItem", back_populates="invoice")
 
 class Payment(Base):
     __tablename__ = "payments"
@@ -213,3 +214,15 @@ class Payment(Base):
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     invoice = relationship("Invoice", back_populates="payments")
+
+class InvoiceLineItem(Base):
+    __tablename__ = "invoice_line_items"
+    id = Column(Integer, primary_key=True, index=True)
+    invoice_id = Column(Integer, ForeignKey("invoices.invoice_id"))
+    sku = Column(String(100), nullable=True)
+    product_name = Column(String(255), nullable=True)
+    quantity = Column(Integer)
+    unit_price = Column(Numeric(14,2))
+    discount_pct = Column(Numeric(5,2), default=0)
+    line_total = Column(Numeric(14,2))
+    invoice = relationship("Invoice", back_populates="line_items")

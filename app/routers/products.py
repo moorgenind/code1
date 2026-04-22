@@ -83,6 +83,8 @@ def search_products(
 
     if category:
         query = query.filter(models.Product.category == category)
+    if sku:
+        query = query.filter(models.Product.sku == sku)
 
     if q:
         search = f"%{q}%"
