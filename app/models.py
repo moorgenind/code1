@@ -260,3 +260,28 @@ class Stock(Base):
     quantity_on_hand = Column(Integer, default=0)
     quantity_reserved = Column(Integer, default=0)
     updated_at = Column(DateTime, nullable=True)
+
+class ProjectTracking(Base):
+    __tablename__ = "project_tracking"
+    id = Column(Integer, primary_key=True, index=True)
+    lead_id = Column(Integer, ForeignKey("leads.lead_id"), unique=True)
+    current_stage = Column(String(50), default="boq")
+    boq_date = Column(DateTime, nullable=True)
+    order_placed_date = Column(DateTime, nullable=True)
+    delivered_date = Column(DateTime, nullable=True)
+    installation_date = Column(DateTime, nullable=True)
+    handover_date = Column(DateTime, nullable=True)
+    notes = Column(Text, nullable=True)
+    updated_at = Column(DateTime, nullable=True)
+
+class ProjectSnag(Base):
+    __tablename__ = "project_snags"
+    id = Column(Integer, primary_key=True, index=True)
+    lead_id = Column(Integer, ForeignKey("leads.lead_id"))
+    description = Column(Text, nullable=False)
+    status = Column(String(50), default="open")
+    stage = Column(String(50), nullable=True)
+    reported_date = Column(DateTime, nullable=True)
+    resolved_date = Column(DateTime, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
