@@ -226,3 +226,37 @@ class InvoiceLineItem(Base):
     discount_pct = Column(Numeric(5,2), default=0)
     line_total = Column(Numeric(14,2))
     invoice = relationship("Invoice", back_populates="line_items")
+
+class PurchaseOrder(Base):
+    __tablename__ = "purchase_orders"
+    po_id = Column(Integer, primary_key=True, index=True)
+    po_code = Column(String(50), unique=True, nullable=False)
+    lead_id = Column(Integer, ForeignKey("leads.lead_id"))
+    supplier = Column(String(255), default="Moolken")
+    status = Column(String(50), default="draft")
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    ordered_at = Column(DateTime, nullable=True)
+    received_at = Column(DateTime, nullable=True)
+    line_items = relationship("POLineItem", back_populates="po")
+
+class POLineItem(Base):
+    __tablename__ = "po_line_items"
+    id = Column(Integer, primary_key=True, index=True)
+    po_id = Column(Integer, ForeignKey("purchase_orders.po_id"))
+    sku = Column(String(100), nullable=True)
+    product_name = Column(String(255), nullable=True)
+    quantity_ordered = Column(Integer)
+    quantity_received = Column(Integer, default=0)
+    unit_cost = Column(Numeric(14,2))
+    line_total = Column(Numeric(14,2))
+    po = relationship("PurchaseOrder", back_populates="line_items")
+
+class Stock(Base):
+    __tablename__ = "stock"
+    id = Column(Integer, primary_key=True, index=True)
+    sku = Column(String(100), unique=True, nullable=False)
+    product_name = Column(String(255), nullable=True)
+    quantity_on_hand = Column(Integer, default=0)
+    quantity_reserved = Column(Integer, default=0)
+    updated_at = Column(DateTime, nullable=True)
