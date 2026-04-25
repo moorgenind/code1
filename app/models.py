@@ -315,3 +315,22 @@ class SiteVisit(Base):
     action_items = Column(Text, nullable=True)
     drive_photos_url = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class Shipment(Base):
+    __tablename__ = "shipments"
+    id = Column(Integer, primary_key=True, index=True)
+    shipment_code = Column(String(50), unique=True, nullable=False)
+    direction = Column(String(20), nullable=False)
+    po_id = Column(Integer, ForeignKey("purchase_orders.po_id"), nullable=True)
+    lead_id = Column(Integer, ForeignKey("leads.lead_id"), nullable=True)
+    from_location = Column(String(255), nullable=True)
+    to_location = Column(String(255), nullable=True)
+    carrier = Column(String(255), nullable=True)
+    tracking_number = Column(String(255), nullable=True)
+    status = Column(String(50), default="pending")
+    expected_date = Column(DateTime, nullable=True)
+    actual_date = Column(DateTime, nullable=True)
+    driver_name = Column(String(255), nullable=True)
+    driver_phone = Column(String(50), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
