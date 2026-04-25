@@ -35,6 +35,13 @@ class TrackingUpdate(BaseModel):
     false_ceiling_ready: Optional[bool] = None
     pre_inspection_done: Optional[bool] = None
     notes: Optional[str] = None
+    carrier: Optional[str] = None
+    tracking_number: Optional[str] = None
+    driver_name: Optional[str] = None
+    driver_phone: Optional[str] = None
+    expected_delivery: Optional[date] = None
+    actual_delivery: Optional[date] = None
+    delivery_notes: Optional[str] = None
 
 class SnagCreate(BaseModel):
     description: str
@@ -84,6 +91,13 @@ def tracking_to_dict(t):
         "false_ceiling_ready": t.false_ceiling_ready,
         "pre_inspection_done": t.pre_inspection_done,
         "notes": t.notes,
+        "carrier": t.carrier,
+        "tracking_number": t.tracking_number,
+        "driver_name": t.driver_name,
+        "driver_phone": t.driver_phone,
+        "expected_delivery": t.expected_delivery.isoformat() if t.expected_delivery else None,
+        "actual_delivery": t.actual_delivery.isoformat() if t.actual_delivery else None,
+        "delivery_notes": t.delivery_notes,
     }
 
 @router.get("/")

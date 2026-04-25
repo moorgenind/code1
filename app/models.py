@@ -289,6 +289,13 @@ class ProjectTracking(Base):
     false_ceiling_ready = Column(Boolean, default=False)
     pre_inspection_done = Column(Boolean, default=False)
     notes = Column(Text, nullable=True)
+    carrier = Column(String(255), nullable=True)
+    tracking_number = Column(String(255), nullable=True)
+    driver_name = Column(String(255), nullable=True)
+    driver_phone = Column(String(50), nullable=True)
+    expected_delivery = Column(DateTime, nullable=True)
+    actual_delivery = Column(DateTime, nullable=True)
+    delivery_notes = Column(Text, nullable=True)
     updated_at = Column(DateTime, nullable=True)
 
 class ProjectSnag(Base):
