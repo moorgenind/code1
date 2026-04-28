@@ -58,6 +58,7 @@ def list_leads(
     status: str = None,
     city: str = None,
     channel: str = None,
+    category: str = None,
     db: Session = Depends(get_db)
 ):
     query = db.query(models.Lead)
@@ -69,7 +70,16 @@ def list_leads(
     if channel:
         query = query.filter(models.Lead.channel == channel)
 
-    return query.order_by(models.Lead.created_at.desc()).all()
+    if category:
+        query = query.filter(models.Lead.category == category)
+    leads = query.order_by(models.Lead.created_at.desc()).all()
+    result = []
+    for lead in leads:
+        boq_value = sum(float(b.total_amount or 0) for b in lead.boqs)
+        d = {c.name: getattr(lead, c.name) for c in lead.__table__.columns}
+        d["boq_value"] = boq_value
+        result.append(d)
+    return result
 
 
 @router.get("/{lead_id}", response_model=schemas.LeadResponse)
