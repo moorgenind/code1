@@ -213,6 +213,10 @@ def update_lead(lead_id: int, payload: schemas.LeadCreate, db: Session = Depends
     for field, value in payload.dict(exclude_unset=True).items():
         if field in ['arch_lighting', 'decorative_lighting', 'automation', 'exterior_lighting', 'mechanical_switches', 'smart_locks', 'design_required']:
             continue
+        if field == 'created_at' and value:
+            from datetime import datetime
+            setattr(lead, field, datetime.fromisoformat(value))
+            continue
         if hasattr(lead, field):
             setattr(lead, field, value)
 

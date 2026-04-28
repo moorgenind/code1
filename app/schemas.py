@@ -74,6 +74,7 @@ class LeadCreate(BaseModel):
     client_phone: Optional[str] = None
     client_email: Optional[str] = None
     client_address: Optional[str] = None
+    created_at: Optional[str] = None
 
     # Scope flags — determines what BOQs and design requests get created
     arch_lighting: bool = False
