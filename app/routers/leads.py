@@ -53,7 +53,7 @@ def generate_design_code(db: Session) -> str:
 # =========================================
 # ROUTES
 # =========================================
-@router.get("/", response_model=List[schemas.LeadResponse])
+@router.get("/")
 def list_leads(
     status: str = None,
     city: str = None,
