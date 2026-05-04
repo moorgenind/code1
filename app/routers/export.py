@@ -97,7 +97,7 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
     ]
 
     # Write data
-    sheets.spreadsheets().values().batchUpdate(ss_id, body={"valueInputOption": "USER_ENTERED", "data": [
+    sheets.spreadsheets().values().batchUpdate(spreadsheetId=ss_id, body={"valueInputOption": "USER_ENTERED", "data": [
         {"range": "BOQ!A1", "values": boq_data},
         {"range": "Summary!A1", "values": summary_rows},
     ]}).execute()
@@ -133,7 +133,7 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
             "fields": "pixelSize"
         }},
     ]
-    sheets.spreadsheets().batchUpdate(ss_id, body={"requests": requests}).execute()
+    sheets.spreadsheets().batchUpdate(spreadsheetId=ss_id, body={"requests": requests}).execute()
 
     # Move to project Drive folder if exists
     if lead.drive_folder_url:
