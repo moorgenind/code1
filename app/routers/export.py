@@ -13,7 +13,7 @@ def get_sheets_service():
     if token_b64:
         creds = pickle.loads(base64.b64decode(token_b64))
     else:
-        BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         with open(os.path.join(BASE_DIR, "token.pickle"), "rb") as f:
             creds = pickle.load(f)
     if creds and creds.expired and creds.refresh_token:
