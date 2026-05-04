@@ -29,7 +29,8 @@ def get_dealer_portal(
         or_(
             models.Lead.city.in_(get_cities_for_states(states)),
             models.Lead.dealer_id == dealer.dealer_id,
-            models.Lead.lead_id.in_(assigned_ids)
+            models.Lead.lead_id.in_(assigned_ids),
+            models.Lead.channel.in_(['flagship', 'flagship_dealer'])
         )
     )
 
