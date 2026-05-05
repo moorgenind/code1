@@ -98,7 +98,7 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
 
     # ── BOQ Sheet Data ──────────────────────────────────
     boq_values = [
-        ['=IMAGE("https://drive.google.com/uc?export=view&id=1pT2_Ignc6Zv6UWS4cepQDSZMVCUWfeT8",1)', "", "", "", "", "", "", "", "", "", "", ""],  # Row 1 - logo
+        ['=IMAGE("https://drive.google.com/uc?export=view&id=1pT2_Ignc6Zv6UWS4cepQDSZMVCUWfeT8",4,110,350)', "", "", "", "", "", "", "", "", "", "", ""],  # Row 1 - logo
         ["", "", "", "", "", "", "", "", "", "", "", ""],
         [f"{category_label} – BOQ", "", "", "", "", "", "", "", "", "", "", ""],  # Row 3
         [f"Project: {project_name}", "", "", "", "", f"Date: {today}", "", "", "", "", "", ""],  # Row 4
@@ -140,7 +140,7 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
         area_groups[area] = area_groups.get(area, 0) + float(item.line_total or 0)
 
     summary_values = [
-        ['=IMAGE("https://drive.google.com/uc?export=view&id=1pT2_Ignc6Zv6UWS4cepQDSZMVCUWfeT8",1)', "", "", ""],
+        ['=IMAGE("https://drive.google.com/uc?export=view&id=1pT2_Ignc6Zv6UWS4cepQDSZMVCUWfeT8",4,110,350)', "", "", ""],
         ["", "", "", ""],
         ["Moorgen Lighting & Smart System", "", "", ""],
         ["BOQ & Pricing Proposal", "", "", ""],
