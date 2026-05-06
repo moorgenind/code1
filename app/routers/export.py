@@ -603,11 +603,11 @@ def export_invoice_to_sheets(invoice_id: int, dealer_key: str = "", db: Session 
         ["", "", "", "", "", "", "GST @ 18%", f"₹{gst_amt:,.2f}", "", ""],
         ["", "", "", "", "", "", "GRAND TOTAL", f"₹{inv_amount:,.2f}", "", ""],
         ["", "", "", "", "", "", "", "", "", ""],
-        ["Bank Details for Payment:", "", "", "", "", "", "", "", "", ""],
+        ["BANK DETAILS FOR PAYMENT", "", "", "", "", "", "", "", "", ""],  # bold heading
         [f"Bank: {MIPL['bank_name']} | Branch: {MIPL['branch']}", "", "", "", "", "", "", "", "", ""],
         [f"A/C No: {MIPL['account_no']} | IFSC: {MIPL['ifsc']}", "", "", "", "", "", "", "", "", ""],
         ["", "", "", "", "", "", "", "", "", ""],
-        ["Terms & Conditions:", "", "", "", "", "", "", "", "", ""],
+        ["TERMS & CONDITIONS", "", "", "", "", "", "", "", "", ""],  # bold heading
         ["- Payment due within 7 days of invoice date.", "", "", "", "", "", "", "", "", ""],
         ["- Balance payment to be cleared before dispatch.", "", "", "", "", "", "", "", "", ""],
         ["- Warranty: 2 years on Moorgen products from date of delivery.", "", "", "", "", "", "", "", "", ""],
@@ -643,8 +643,20 @@ def export_invoice_to_sheets(invoice_id: int, dealer_key: str = "", db: Session 
             "fields": "userEnteredFormat.horizontalAlignment"}},
         # Center qty and unit cols
         {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": 12, "endRowIndex": total_row, "startColumnIndex": 3, "endColumnIndex": 5},
-            "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
-            "fields": "userEnteredFormat.horizontalAlignment"}},
+            "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}},
+            "fields": "userEnteredFormat"}},
+        # Center S.No col
+        {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": 12, "endRowIndex": total_row, "startColumnIndex": 0, "endColumnIndex": 1},
+            "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}},
+            "fields": "userEnteredFormat"}},
+        # Center ALL table contents including header
+        {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": 11, "endRowIndex": total_row, "startColumnIndex": 0, "endColumnIndex": 8},
+            "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP"}},
+            "fields": "userEnteredFormat"}},
+        # Reapply black header AFTER center (so it overrides)
+        {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": 11, "endRowIndex": 12, "startColumnIndex": 0, "endColumnIndex": 8},
+            "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.07, "green": 0.07, "blue": 0.07}, "textFormat": {"bold": True, "foregroundColor": {"red": 1, "green": 1, "blue": 1}}, "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}},
+            "fields": "userEnteredFormat"}},
         # Borders on totals section
         {"updateBorders": {
             "range": {"sheetId": 0, "startRowIndex": total_row - 1, "endRowIndex": total_row + 4, "startColumnIndex": 5, "endColumnIndex": 8},
