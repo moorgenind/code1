@@ -110,6 +110,7 @@ class LeadResponse(BaseModel):
     client_address: Optional[str]
     created_at: datetime
     updated_at: datetime
+    boqs: List['BoqResponse'] = []
 
     class Config:
         from_attributes = True
