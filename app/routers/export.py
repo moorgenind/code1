@@ -13,11 +13,12 @@ MOORGEN_LOGO_URL = "https://drive.google.com/uc?export=download&id=1_logo_file_i
 MOORGEN_LOGO_DRIVE_ID = "1HeXvo_bjGU6RooXz3aCWcxr8eoDsfaIR2"  # boq_images folder
 
 TERMS = [
-    "Shipment: 30–60 days from order confirmation.",
-    "60% advance required to confirm the order.",
+    "Prices valid for 15 days from date of quotation.",
+    "50% advance required to confirm the order; balance before dispatch.",
+    "Delivery: 45–60 working days from order confirmation.",
+    "Installation not included unless separately agreed in writing.",
+    "Drivers and control gear added after layouts are finalized.",
     "Prices subject to change without notice.",
-    "Quotation valid for 15 days from issue.",
-    "Drivers added after layouts are finalized.",
     "No returns under any circumstances.",
 ]
 
@@ -574,17 +575,25 @@ def export_invoice_to_sheets(invoice_id: int, dealer_key: str = "", db: Session 
         ])
 
     total_row = data_start + len(rows)
+    mipl_gstin = MIPL["gstin"]
+    mipl_email = MIPL["email"]
+    bill_gstin = bill_to.get("gstin", "")
+    bill_name = bill_to["name"]
+    bill_addr = bill_to["address"]
+    proj_name = lead.project_name if lead else ""
+    city = lead.city if lead else ""
+
     values = [
-        [LOGO, "", "", "", "", "", "", "TAX INVOICE", "", ""],                           # Row 1
+        [LOGO, "", "", "", "", "", "TAX INVOICE", "", "", ""],                           # Row 1
         [MIPL["name"], "", "", "", "", "", "Invoice No:", invoice.invoice_code, "", ""], # Row 2
         [MIPL["address"], "", "", "", "", "", "Date:", today, "", ""],                  # Row 3
-        [f"GSTIN: {MIPL['gstin']}", "", "", "", "", "", "Place of Supply:", lead.city if lead else "", "", ""], # Row 4
-        [f"Bank: {MIPL['bank_name']} | A/C: {MIPL['account_no']} | IFSC: {MIPL['ifsc']}", "", "", "", "", "", "", "", "", ""], # Row 5
+        [f"GSTIN: {mipl_gstin}", "", "", "", "", "", "Place of Supply:", city, "", ""], # Row 4
+        [f"Email: {mipl_email}", "", "", "", "", "", "", "", "", ""],                # Row 5
         ["", "", "", "", "", "", "", "", "", ""],                                        # Row 6 spacer
         ["BILL TO", "", "", "", "", "", "", "", "", ""],                                 # Row 7
-        [bill_to["name"], "", "", "", "", "", "", "", "", ""],                           # Row 8
-        [bill_to["address"], "", "", "", "", "", "", "", "", ""],                        # Row 9
-        [f"GSTIN: {bill_to.get('gstin', 'N/A')}", "", "", "", "", "", "Project:", lead.project_name if lead else "", "", ""], # Row 10
+        [bill_name, "", "", "", "", "", "", "", "", ""],                                 # Row 8
+        [bill_addr, "", "", "", "", "", "", "", "", ""],                                 # Row 9
+        [f"GSTIN: {bill_gstin}" if bill_gstin else "", "", "", "", "", "", "Project:", proj_name, "", ""], # Row 10
         ["", "", "", "", "", "", "", "", "", ""],                                        # Row 11 spacer
         ["S.No.", "Product / Description", "SKU", "Unit", "Qty", "Unit Price (₹)", "Disc %", "Amount (₹)", "", ""],  # Row 12 header
     ] + rows + [
@@ -594,14 +603,19 @@ def export_invoice_to_sheets(invoice_id: int, dealer_key: str = "", db: Session 
         ["", "", "", "", "", "", "GST @ 18%", f"₹{gst_amt:,.2f}", "", ""],
         ["", "", "", "", "", "", "GRAND TOTAL", f"₹{inv_amount:,.2f}", "", ""],
         ["", "", "", "", "", "", "", "", "", ""],
-        ["Bank Details:", "", "", "", "", "", "", "", "", ""],
-        [f"{MIPL['bank_name']}", "", "", "", "", "", "", "", "", ""],
-        [f"A/C No: {MIPL['account_no']}", "", "", "", "", "", "", "", "", ""],
-        [f"IFSC: {MIPL['ifsc']} | Branch: {MIPL['branch']}", "", "", "", "", "", "", "", "", ""],
+        ["Bank Details for Payment:", "", "", "", "", "", "", "", "", ""],
+        [f"Bank: {MIPL['bank_name']} | Branch: {MIPL['branch']}", "", "", "", "", "", "", "", "", ""],
+        [f"A/C No: {MIPL['account_no']} | IFSC: {MIPL['ifsc']}", "", "", "", "", "", "", "", "", ""],
         ["", "", "", "", "", "", "", "", "", ""],
         ["Terms & Conditions:", "", "", "", "", "", "", "", "", ""],
-        ["- 60% advance required to confirm order.", "", "", "", "", "", "", "", "", ""],
-        ["- Balance to be paid before delivery.", "", "", "", "", "", "", "", "", ""],
+        ["- Payment due within 7 days of invoice date.", "", "", "", "", "", "", "", "", ""],
+        ["- Balance payment to be cleared before dispatch.", "", "", "", "", "", "", "", "", ""],
+        ["- Warranty: 2 years on Moorgen products from date of delivery.", "", "", "", "", "", "", "", "", ""],
+        ["- Defective products must be reported within 7 days of delivery.", "", "", "", "", "", "", "", "", ""],
+        ["- Goods once dispatched cannot be returned unless defective.", "", "", "", "", "", "", "", "", ""],
+        ["- Late payment attracts 18% interest per annum.", "", "", "", "", "", "", "", "", ""],
+        ["- Disputes subject to Hyderabad jurisdiction only.", "", "", "", "", "", "", "", "", ""],
+        ["- E&OE — Errors and Omissions Excepted.", "", "", "", "", "", "", "", "", ""],
         ["- This is a computer generated invoice.", "", "", "", "", "", "", "", "", ""],
     ]
 
@@ -619,13 +633,39 @@ def export_invoice_to_sheets(invoice_id: int, dealer_key: str = "", db: Session 
         # Logo row height
         {"updateDimensionProperties": {"range": {"sheetId": 0, "dimension": "ROWS", "startIndex": 0, "endIndex": 1}, "properties": {"pixelSize": 80}, "fields": "pixelSize"}},
         # Header row black
+        # Header row 12 (index 11) black
         {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": 11, "endRowIndex": 12, "startColumnIndex": 0, "endColumnIndex": 8},
             "cell": {"userEnteredFormat": {"backgroundColor": BLACK, "textFormat": {"bold": True, "foregroundColor": WHITE}, "horizontalAlignment": "CENTER"}},
             "fields": "userEnteredFormat"}},
-        # Grand total row black
-        {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": total_row + 4, "endRowIndex": total_row + 5, "startColumnIndex": 5, "endColumnIndex": 8},
-            "cell": {"userEnteredFormat": {"backgroundColor": BLACK, "textFormat": {"bold": True, "foregroundColor": WHITE}}},
+        # Right align all amount cells
+        {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": 12, "endRowIndex": total_row + 5, "startColumnIndex": 5, "endColumnIndex": 8},
+            "cell": {"userEnteredFormat": {"horizontalAlignment": "RIGHT"}},
+            "fields": "userEnteredFormat.horizontalAlignment"}},
+        # Center qty and unit cols
+        {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": 12, "endRowIndex": total_row, "startColumnIndex": 3, "endColumnIndex": 5},
+            "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
+            "fields": "userEnteredFormat.horizontalAlignment"}},
+        # Borders on totals section
+        {"updateBorders": {
+            "range": {"sheetId": 0, "startRowIndex": total_row - 1, "endRowIndex": total_row + 4, "startColumnIndex": 5, "endColumnIndex": 8},
+            "top": {"style": "SOLID", "color": {"red": 0.7, "green": 0.7, "blue": 0.7}},
+            "bottom": {"style": "SOLID", "color": {"red": 0.7, "green": 0.7, "blue": 0.7}},
+            "left": {"style": "SOLID", "color": {"red": 0.7, "green": 0.7, "blue": 0.7}},
+            "right": {"style": "SOLID", "color": {"red": 0.7, "green": 0.7, "blue": 0.7}},
+            "innerHorizontal": {"style": "SOLID", "color": {"red": 0.85, "green": 0.85, "blue": 0.85}},
+        }},
+        # Grand total row black F:H
+        {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": total_row + 3, "endRowIndex": total_row + 4, "startColumnIndex": 5, "endColumnIndex": 8},
+            "cell": {"userEnteredFormat": {"backgroundColor": BLACK, "textFormat": {"bold": True, "foregroundColor": WHITE}, "horizontalAlignment": "RIGHT"}},
             "fields": "userEnteredFormat"}},
+        # Right align H2:H4 (values)
+        {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": 1, "endRowIndex": 4, "startColumnIndex": 7, "endColumnIndex": 8},
+            "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT"}},
+            "fields": "userEnteredFormat.horizontalAlignment"}},
+        # Left align F2:G4 (labels)
+        {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": 1, "endRowIndex": 4, "startColumnIndex": 5, "endColumnIndex": 7},
+            "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT"}},
+            "fields": "userEnteredFormat.horizontalAlignment"}},
         # Bill To bold
         {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": 6, "endRowIndex": 7},
             "cell": {"userEnteredFormat": {"textFormat": {"bold": True, "fontSize": 10}}},
@@ -634,13 +674,14 @@ def export_invoice_to_sheets(invoice_id: int, dealer_key: str = "", db: Session 
         {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": 1, "endRowIndex": 2},
             "cell": {"userEnteredFormat": {"textFormat": {"bold": True, "fontSize": 13}}},
             "fields": "userEnteredFormat"}},
-        # TAX INVOICE bold right
-        {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 7, "endColumnIndex": 10},
+        # TAX INVOICE bold right - merge G1:H1
+        {"mergeCells": {"range": {"sheetId": 0, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 6, "endColumnIndex": 8}, "mergeType": "MERGE_ALL"}},
+        {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 6, "endColumnIndex": 8},
             "cell": {"userEnteredFormat": {"textFormat": {"bold": True, "fontSize": 16}, "horizontalAlignment": "RIGHT"}},
             "fields": "userEnteredFormat"}},
         # Borders on line items
         {"updateBorders": {
-            "range": {"sheetId": 0, "startRowIndex": 11, "endRowIndex": total_row, "startColumnIndex": 0, "endColumnIndex": 8},
+            "range": {"sheetId": 0, "startRowIndex": 12, "endRowIndex": total_row, "startColumnIndex": 0, "endColumnIndex": 8},
             "top": {"style": "SOLID", "color": {"red": 0.7, "green": 0.7, "blue": 0.7}},
             "bottom": {"style": "SOLID", "color": {"red": 0.7, "green": 0.7, "blue": 0.7}},
             "left": {"style": "SOLID", "color": {"red": 0.7, "green": 0.7, "blue": 0.7}},
@@ -660,11 +701,28 @@ def export_invoice_to_sheets(invoice_id: int, dealer_key: str = "", db: Session 
         # Freeze top rows
         {"updateSheetProperties": {"properties": {"sheetId": 0, "gridProperties": {"frozenRowCount": 12}}, "fields": "gridProperties.frozenRowCount"}},
         # Merge company name
-        {"mergeCells": {"range": {"sheetId": 0, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": 6}, "mergeType": "MERGE_ALL"}},
-        {"mergeCells": {"range": {"sheetId": 0, "startRowIndex": 2, "endRowIndex": 4, "startColumnIndex": 0, "endColumnIndex": 5}, "mergeType": "MERGE_ALL"}},
-        {"mergeCells": {"range": {"sheetId": 0, "startRowIndex": 4, "endRowIndex": 5, "startColumnIndex": 0, "endColumnIndex": 8}, "mergeType": "MERGE_ALL"}},
-        {"mergeCells": {"range": {"sheetId": 0, "startRowIndex": 7, "endRowIndex": 8, "startColumnIndex": 0, "endColumnIndex": 8}, "mergeType": "MERGE_ALL"}},
-        {"mergeCells": {"range": {"sheetId": 0, "startRowIndex": 8, "endRowIndex": 10, "startColumnIndex": 0, "endColumnIndex": 5}, "mergeType": "MERGE_ALL"}},
+        # A1:B1 logo merge
+        {"mergeCells": {"range": {"sheetId": 0, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 2}, "mergeType": "MERGE_ALL"}},
+        # A2:C2 company name
+        {"mergeCells": {"range": {"sheetId": 0, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": 3}, "mergeType": "MERGE_ALL"}},
+        # A3 address (single row)
+        {"mergeCells": {"range": {"sheetId": 0, "startRowIndex": 2, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 5}, "mergeType": "MERGE_ALL"}},
+        # A5 GSTIN
+        {"mergeCells": {"range": {"sheetId": 0, "startRowIndex": 4, "endRowIndex": 5, "startColumnIndex": 0, "endColumnIndex": 5}, "mergeType": "MERGE_ALL"}},
+        # A6 bank
+        {"mergeCells": {"range": {"sheetId": 0, "startRowIndex": 5, "endRowIndex": 6, "startColumnIndex": 0, "endColumnIndex": 8}, "mergeType": "MERGE_ALL"}},
+        # F2:G2 Invoice No label
+        {"mergeCells": {"range": {"sheetId": 0, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 5, "endColumnIndex": 7}, "mergeType": "MERGE_ALL"}},
+        {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": 1, "endRowIndex": 4, "startColumnIndex": 5, "endColumnIndex": 6},
+            "cell": {"userEnteredFormat": {"horizontalAlignment": "RIGHT"}},
+            "fields": "userEnteredFormat.horizontalAlignment"}},
+        {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": 1, "endRowIndex": 4, "startColumnIndex": 7, "endColumnIndex": 8},
+            "cell": {"userEnteredFormat": {"horizontalAlignment": "RIGHT"}},
+            "fields": "userEnteredFormat.horizontalAlignment"}},
+        # Bill To name
+        {"mergeCells": {"range": {"sheetId": 0, "startRowIndex": 7, "endRowIndex": 8, "startColumnIndex": 0, "endColumnIndex": 5}, "mergeType": "MERGE_ALL"}},
+        # Bill To address (single row)
+        {"mergeCells": {"range": {"sheetId": 0, "startRowIndex": 8, "endRowIndex": 9, "startColumnIndex": 0, "endColumnIndex": 5}, "mergeType": "MERGE_ALL"}},
     ]
 
     sheets.spreadsheets().batchUpdate(spreadsheetId=ss_id, body={"requests": reqs}).execute()
