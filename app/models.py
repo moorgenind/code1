@@ -196,6 +196,8 @@ class Invoice(Base):
     lead_id = Column(Integer, ForeignKey("leads.lead_id"))
     boq_id = Column(Integer, ForeignKey("boqs.boq_id"), nullable=True)
     invoice_amount = Column(Numeric(14,2), nullable=False)
+    pricing_tier = Column(String(50), default='client')
+    discount_pct = Column(Numeric(5,2), default=0)
     subtotal = Column(Numeric(14,2), default=0)
     discount_amount = Column(Numeric(14,2), default=0)
     gst_amount = Column(Numeric(14,2), default=0)
