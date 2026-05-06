@@ -224,6 +224,17 @@ def add_payment(invoice_id: int, payload: PaymentCreate, db: Session = Depends(g
     db.commit()
     return {"success": True}
 
+@router.delete("/invoices/{invoice_id}")
+def delete_invoice(invoice_id: int, db: Session = Depends(get_db)):
+    invoice = db.query(models.Invoice).filter(models.Invoice.invoice_id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    db.query(models.Payment).filter(models.Payment.invoice_id == invoice_id).delete()
+    db.query(models.InvoiceLineItem).filter(models.InvoiceLineItem.invoice_id == invoice_id).delete()
+    db.delete(invoice)
+    db.commit()
+    return {"success": True}
+
 @router.delete("/invoices/{invoice_id}/payments/{payment_id}")
 def delete_payment(invoice_id: int, payment_id: int, db: Session = Depends(get_db)):
     payment = db.query(models.Payment).filter(
