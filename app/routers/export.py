@@ -478,3 +478,203 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
 
     sheet_url = f"https://docs.google.com/spreadsheets/d/{ss_id}"
     return {"sheet_url": sheet_url, "spreadsheet_id": ss_id}
+
+# ── Company & Dealer Master Data ─────────────────────
+MIPL = {
+    "name": "Moorgen Innovations Private Limited",
+    "address": "Basement, Plot No.51 SY No.41P, Siri Park View,\nGuttala Begumpet, Madhapur, Hyderabad - 500033",
+    "gstin": "36AATCM2958B1Z7",
+    "email": "info@moorgenindia.co",
+    "phone": "+91 ",
+    "bank_name": "ICICI Bank",
+    "account_no": "193905000667",
+    "ifsc": "ICIC0001939",
+    "branch": "Banjara Hills Road No.10",
+}
+
+DEALERS = {
+    "murano": {
+        "name": "Murano India Pvt Ltd",
+        "address": "No.61 Greater Kailash Part 1, Delhi - 110048",
+        "gstin": "07AACCM2448M2Z8",
+    },
+    "flogloo": {
+        "name": "Floglo International LLP",
+        "address": "320, Valluvar Kotam High Road, 1st Floor,\nNungambakam, Chennai - 600034",
+        "gstin": "33AAFFF5487K1Z3",
+    },
+    "elements": {
+        "name": "Elements and Essentials Private Limited",
+        "address": "Near Sankalp Square-3, Sindhubhavan Road,\nDaskroi, Ahmedabad, Gujarat - 380059",
+        "gstin": "24AAJCE1849B1ZY",
+    },
+    "mahavir": {
+        "name": "Soundroom Lifestyle Technologies Pvt Ltd",
+        "address": "Level 4, Mercedes Benz Towers, Madhapur,\nHyderabad - 500033, Telangana",
+        "gstin": "36AARCS0399G1ZU",
+    },
+    "lightforge": {
+        "name": "LightForge Distribution Pvt Ltd",
+        "address": "Hyderabad, Telangana",
+        "gstin": "",
+    },
+}
+
+@router.post("/invoice/{invoice_id}/sheets")
+def export_invoice_to_sheets(invoice_id: int, dealer_key: str = "", db: Session = Depends(get_db)):
+    from app import models as m
+    from datetime import datetime
+
+    invoice = db.query(m.Invoice).filter(m.Invoice.invoice_id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    lead = db.query(m.Lead).filter(m.Lead.lead_id == invoice.lead_id).first()
+    sheets = get_sheets()
+    drive = get_drive()
+
+    today = datetime.now().strftime("%d-%b-%Y")
+    inv_amount = float(invoice.invoice_amount or 0)
+    subtotal = float(invoice.subtotal or inv_amount)
+    discount_amt = float(invoice.discount_amount or 0)
+    gst_amt = float(invoice.gst_amount or 0)
+    taxable = subtotal - discount_amt
+
+    # Bill To party
+    if dealer_key and dealer_key.lower() in DEALERS:
+        bill_to = DEALERS[dealer_key.lower()]
+    elif lead and lead.channel in ['flagship', 'flagship_dealer']:
+        bill_to = DEALERS['lightforge']
+    else:
+        bill_to = {
+            "name": lead.client_name or lead.project_name or "Client",
+            "address": lead.client_address or "",
+            "gstin": "",
+        }
+
+    title = f"Invoice {invoice.invoice_code} - {bill_to['name']}"
+    ss = sheets.spreadsheets().create(body={
+        "properties": {"title": title},
+        "sheets": [{"properties": {"sheetId": 0, "title": "Invoice"}}]
+    }).execute()
+    ss_id = ss["spreadsheetId"]
+
+    LOGO = f'=IMAGE("https://drive.google.com/uc?export=view&id=1eh_LL1RACtyrWeOtX0gb8H7pUaKlrD_k",4,50,200)'
+
+    data_start = 13
+    items = invoice.line_items
+    rows = []
+    for i, item in enumerate(items, 1):
+        rows.append([
+            i, item.product_name or "", item.sku or "", "pcs",
+            item.quantity or 0,
+            float(item.unit_price or 0),
+            float(item.discount_pct or 0),
+            float(item.line_total or 0),
+        ])
+
+    total_row = data_start + len(rows)
+    values = [
+        [LOGO, "", "", "", "", "", "", "TAX INVOICE", "", ""],                           # Row 1
+        [MIPL["name"], "", "", "", "", "", "Invoice No:", invoice.invoice_code, "", ""], # Row 2
+        [MIPL["address"], "", "", "", "", "", "Date:", today, "", ""],                  # Row 3
+        [f"GSTIN: {MIPL['gstin']}", "", "", "", "", "", "Place of Supply:", lead.city if lead else "", "", ""], # Row 4
+        [f"Bank: {MIPL['bank_name']} | A/C: {MIPL['account_no']} | IFSC: {MIPL['ifsc']}", "", "", "", "", "", "", "", "", ""], # Row 5
+        ["", "", "", "", "", "", "", "", "", ""],                                        # Row 6 spacer
+        ["BILL TO", "", "", "", "", "", "", "", "", ""],                                 # Row 7
+        [bill_to["name"], "", "", "", "", "", "", "", "", ""],                           # Row 8
+        [bill_to["address"], "", "", "", "", "", "", "", "", ""],                        # Row 9
+        [f"GSTIN: {bill_to.get('gstin', 'N/A')}", "", "", "", "", "", "Project:", lead.project_name if lead else "", "", ""], # Row 10
+        ["", "", "", "", "", "", "", "", "", ""],                                        # Row 11 spacer
+        ["S.No.", "Product / Description", "SKU", "Unit", "Qty", "Unit Price (₹)", "Disc %", "Amount (₹)", "", ""],  # Row 12 header
+    ] + rows + [
+        ["", "", "", "", "", "", "Subtotal", f"₹{subtotal:,.2f}", "", ""],
+        ["", "", "", "", "", "", f"Discount ({invoice.discount_pct or 0}%)", f"-₹{discount_amt:,.2f}", "", ""] if discount_amt > 0 else ["", "", "", "", "", "", "", "", "", ""],
+        ["", "", "", "", "", "", "Taxable Amount", f"₹{taxable:,.2f}", "", ""],
+        ["", "", "", "", "", "", "GST @ 18%", f"₹{gst_amt:,.2f}", "", ""],
+        ["", "", "", "", "", "", "GRAND TOTAL", f"₹{inv_amount:,.2f}", "", ""],
+        ["", "", "", "", "", "", "", "", "", ""],
+        ["Bank Details:", "", "", "", "", "", "", "", "", ""],
+        [f"{MIPL['bank_name']}", "", "", "", "", "", "", "", "", ""],
+        [f"A/C No: {MIPL['account_no']}", "", "", "", "", "", "", "", "", ""],
+        [f"IFSC: {MIPL['ifsc']} | Branch: {MIPL['branch']}", "", "", "", "", "", "", "", "", ""],
+        ["", "", "", "", "", "", "", "", "", ""],
+        ["Terms & Conditions:", "", "", "", "", "", "", "", "", ""],
+        ["- 60% advance required to confirm order.", "", "", "", "", "", "", "", "", ""],
+        ["- Balance to be paid before delivery.", "", "", "", "", "", "", "", "", ""],
+        ["- This is a computer generated invoice.", "", "", "", "", "", "", "", "", ""],
+    ]
+
+    sheets.spreadsheets().values().batchUpdate(
+        spreadsheetId=ss_id,
+        body={"valueInputOption": "USER_ENTERED", "data": [{"range": "Invoice!A1", "values": values}]}
+    ).execute()
+
+    BLACK = {"red": 0.07, "green": 0.07, "blue": 0.07}
+    WHITE = {"red": 1, "green": 1, "blue": 1}
+    LIGHT = {"red": 0.95, "green": 0.95, "blue": 0.95}
+
+    reqs = [
+        {"updateSheetProperties": {"properties": {"sheetId": 0, "gridProperties": {"hideGridlines": True}}, "fields": "gridProperties.hideGridlines"}},
+        # Logo row height
+        {"updateDimensionProperties": {"range": {"sheetId": 0, "dimension": "ROWS", "startIndex": 0, "endIndex": 1}, "properties": {"pixelSize": 80}, "fields": "pixelSize"}},
+        # Header row black
+        {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": 11, "endRowIndex": 12, "startColumnIndex": 0, "endColumnIndex": 8},
+            "cell": {"userEnteredFormat": {"backgroundColor": BLACK, "textFormat": {"bold": True, "foregroundColor": WHITE}, "horizontalAlignment": "CENTER"}},
+            "fields": "userEnteredFormat"}},
+        # Grand total row black
+        {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": total_row + 4, "endRowIndex": total_row + 5, "startColumnIndex": 5, "endColumnIndex": 8},
+            "cell": {"userEnteredFormat": {"backgroundColor": BLACK, "textFormat": {"bold": True, "foregroundColor": WHITE}}},
+            "fields": "userEnteredFormat"}},
+        # Bill To bold
+        {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": 6, "endRowIndex": 7},
+            "cell": {"userEnteredFormat": {"textFormat": {"bold": True, "fontSize": 10}}},
+            "fields": "userEnteredFormat"}},
+        # Company name bold large
+        {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": 1, "endRowIndex": 2},
+            "cell": {"userEnteredFormat": {"textFormat": {"bold": True, "fontSize": 13}}},
+            "fields": "userEnteredFormat"}},
+        # TAX INVOICE bold right
+        {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 7, "endColumnIndex": 10},
+            "cell": {"userEnteredFormat": {"textFormat": {"bold": True, "fontSize": 16}, "horizontalAlignment": "RIGHT"}},
+            "fields": "userEnteredFormat"}},
+        # Borders on line items
+        {"updateBorders": {
+            "range": {"sheetId": 0, "startRowIndex": 11, "endRowIndex": total_row, "startColumnIndex": 0, "endColumnIndex": 8},
+            "top": {"style": "SOLID", "color": {"red": 0.7, "green": 0.7, "blue": 0.7}},
+            "bottom": {"style": "SOLID", "color": {"red": 0.7, "green": 0.7, "blue": 0.7}},
+            "left": {"style": "SOLID", "color": {"red": 0.7, "green": 0.7, "blue": 0.7}},
+            "right": {"style": "SOLID", "color": {"red": 0.7, "green": 0.7, "blue": 0.7}},
+            "innerHorizontal": {"style": "SOLID", "color": {"red": 0.85, "green": 0.85, "blue": 0.85}},
+            "innerVertical": {"style": "SOLID", "color": {"red": 0.85, "green": 0.85, "blue": 0.85}},
+        }},
+        # Col widths
+        {"updateDimensionProperties": {"range": {"sheetId": 0, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 1}, "properties": {"pixelSize": 40}, "fields": "pixelSize"}},
+        {"updateDimensionProperties": {"range": {"sheetId": 0, "dimension": "COLUMNS", "startIndex": 1, "endIndex": 2}, "properties": {"pixelSize": 280}, "fields": "pixelSize"}},
+        {"updateDimensionProperties": {"range": {"sheetId": 0, "dimension": "COLUMNS", "startIndex": 2, "endIndex": 3}, "properties": {"pixelSize": 140}, "fields": "pixelSize"}},
+        {"updateDimensionProperties": {"range": {"sheetId": 0, "dimension": "COLUMNS", "startIndex": 3, "endIndex": 4}, "properties": {"pixelSize": 50}, "fields": "pixelSize"}},
+        {"updateDimensionProperties": {"range": {"sheetId": 0, "dimension": "COLUMNS", "startIndex": 4, "endIndex": 5}, "properties": {"pixelSize": 50}, "fields": "pixelSize"}},
+        {"updateDimensionProperties": {"range": {"sheetId": 0, "dimension": "COLUMNS", "startIndex": 5, "endIndex": 6}, "properties": {"pixelSize": 120}, "fields": "pixelSize"}},
+        {"updateDimensionProperties": {"range": {"sheetId": 0, "dimension": "COLUMNS", "startIndex": 6, "endIndex": 7}, "properties": {"pixelSize": 80}, "fields": "pixelSize"}},
+        {"updateDimensionProperties": {"range": {"sheetId": 0, "dimension": "COLUMNS", "startIndex": 7, "endIndex": 8}, "properties": {"pixelSize": 130}, "fields": "pixelSize"}},
+        # Freeze top rows
+        {"updateSheetProperties": {"properties": {"sheetId": 0, "gridProperties": {"frozenRowCount": 12}}, "fields": "gridProperties.frozenRowCount"}},
+        # Merge company name
+        {"mergeCells": {"range": {"sheetId": 0, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": 6}, "mergeType": "MERGE_ALL"}},
+        {"mergeCells": {"range": {"sheetId": 0, "startRowIndex": 2, "endRowIndex": 4, "startColumnIndex": 0, "endColumnIndex": 5}, "mergeType": "MERGE_ALL"}},
+        {"mergeCells": {"range": {"sheetId": 0, "startRowIndex": 4, "endRowIndex": 5, "startColumnIndex": 0, "endColumnIndex": 8}, "mergeType": "MERGE_ALL"}},
+        {"mergeCells": {"range": {"sheetId": 0, "startRowIndex": 7, "endRowIndex": 8, "startColumnIndex": 0, "endColumnIndex": 8}, "mergeType": "MERGE_ALL"}},
+        {"mergeCells": {"range": {"sheetId": 0, "startRowIndex": 8, "endRowIndex": 10, "startColumnIndex": 0, "endColumnIndex": 5}, "mergeType": "MERGE_ALL"}},
+    ]
+
+    sheets.spreadsheets().batchUpdate(spreadsheetId=ss_id, body={"requests": reqs}).execute()
+
+    # Move to project Drive folder
+    if lead and lead.drive_folder_url:
+        try:
+            folder_id = lead.drive_folder_url.rstrip('/').split('/')[-1].split('?')[0]
+            drive.files().update(fileId=ss_id, addParents=folder_id, removeParents='root', supportsAllDrives=True, fields='id').execute()
+        except Exception as e:
+            print(f"Could not move to Drive: {e}")
+
+    return {"sheet_url": f"https://docs.google.com/spreadsheets/d/{ss_id}"}
