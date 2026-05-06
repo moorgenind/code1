@@ -150,6 +150,53 @@ def list_invoices(db: Session = Depends(get_db)):
         })
     return result
 
+
+@router.get("/invoices/{invoice_id}")
+def get_invoice(invoice_id: int, db: Session = Depends(get_db)):
+    invoice = db.query(models.Invoice).filter(models.Invoice.invoice_id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    lead = db.query(models.Lead).filter(models.Lead.lead_id == invoice.lead_id).first()
+    paid = sum(float(p.amount or 0) for p in invoice.payments)
+    return {
+        "invoice_id": invoice.invoice_id,
+        "invoice_code": invoice.invoice_code,
+        "lead_id": invoice.lead_id,
+        "client_name": lead.client_name if lead else None,
+        "project_name": lead.project_name if lead else None,
+        "invoice_amount": float(invoice.invoice_amount or 0),
+        "subtotal": float(invoice.subtotal or 0),
+        "discount_pct": float(invoice.discount_pct or 0),
+        "discount_amount": float(invoice.discount_amount or 0),
+        "gst_amount": float(invoice.gst_amount or 0),
+        "pricing_tier": invoice.pricing_tier,
+        "status": invoice.status,
+        "notes": invoice.notes,
+        "created_at": invoice.created_at.isoformat() if invoice.created_at else None,
+        "amount_paid": paid,
+        "payments": [
+            {
+                "payment_id": p.payment_id,
+                "payment_type": p.payment_type,
+                "amount": float(p.amount or 0),
+                "payment_date": p.payment_date.isoformat() if p.payment_date else None,
+                "notes": p.notes,
+            }
+            for p in invoice.payments
+        ],
+        "line_items": [
+            {
+                "sku": li.sku,
+                "product_name": li.product_name,
+                "quantity": li.quantity,
+                "unit_price": float(li.unit_price or 0),
+                "discount_pct": float(li.discount_pct or 0),
+                "line_total": float(li.line_total or 0),
+            }
+            for li in invoice.line_items
+        ],
+    }
+
 @router.post("/invoices/{invoice_id}/payments")
 def add_payment(invoice_id: int, payload: PaymentCreate, db: Session = Depends(get_db)):
     invoice = db.query(models.Invoice).filter(models.Invoice.invoice_id == invoice_id).first()
