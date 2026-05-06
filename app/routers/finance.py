@@ -100,7 +100,6 @@ def create_invoice(payload: InvoiceCreate, db: Session = Depends(get_db)):
         subtotal=payload.subtotal,
         discount_amount=payload.discount_amount,
         gst_amount=payload.gst_amount,
-        subtotal=payload.subtotal,
         notes=payload.notes,
     )
     db.add(invoice)
