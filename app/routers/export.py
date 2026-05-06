@@ -98,7 +98,7 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
 
     # ── BOQ Sheet Data ──────────────────────────────────
     boq_values = [
-        ['=IMAGE("https://drive.google.com/uc?export=view&id=1pT2_Ignc6Zv6UWS4cepQDSZMVCUWfeT8",4,110,350)', "", "", "", "", "", "", "", "", "", "", ""],  # Row 1 - logo
+        ['=IMAGE("https://drive.google.com/uc?export=view&id=1eh_LL1RACtyrWeOtX0gb8H7pUaKlrD_k",4,60,250)', "", "", "", "", "", "", "", "", "", "", ""],  # Row 1 - logo
         ["", "", "", "", "", "", "", "", "", "", "", ""],
         [f"{category_label} – BOQ", "", "", "", "", "", "", "", "", "", "", ""],  # Row 3
         [f"Project: {project_name}", "", "", "", "", f"Date: {today}", "", "", "", "", "", ""],  # Row 4
@@ -140,7 +140,7 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
         area_groups[area] = area_groups.get(area, 0) + float(item.line_total or 0)
 
     summary_values = [
-        ['=IMAGE("https://drive.google.com/uc?export=view&id=1pT2_Ignc6Zv6UWS4cepQDSZMVCUWfeT8",4,110,350)', "", "", ""],
+        ['=IMAGE("https://drive.google.com/uc?export=view&id=1eh_LL1RACtyrWeOtX0gb8H7pUaKlrD_k",4,60,250)', "", "", ""],
         ["", "", "", ""],
         ["Moorgen Lighting & Smart System", "", "", ""],
         ["BOQ & Pricing Proposal", "", "", ""],
@@ -191,7 +191,7 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
         }},
         # Merge logo cell A1:C1
         {"mergeCells": {
-            "range": {"sheetId": 0, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 4},
+            "range": {"sheetId": 0, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 3},
             "mergeType": "MERGE_ALL"
         }},
         # Summary logo row height
@@ -200,7 +200,7 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
             "properties": {"pixelSize": 150}, "fields": "pixelSize"
         }},
         {"mergeCells": {
-            "range": {"sheetId": 1, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 4},
+            "range": {"sheetId": 1, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 3},
             "mergeType": "MERGE_ALL"
         }},
         # Title row bold large
@@ -225,17 +225,7 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
             "properties": {"sheetId": 0, "gridProperties": {"frozenRowCount": header_row + 1}},
             "fields": "gridProperties.frozenRowCount"
         }},
-        # Alternate row colors for data
-        {"addConditionalFormatRule": {
-            "rule": {
-                "ranges": [{"sheetId": 0, "startRowIndex": header_row + 1, "endRowIndex": last_item_row}],
-                "booleanRule": {
-                    "condition": {"type": "CUSTOM_FORMULA", "values": [{"userEnteredValue": "=MOD(ROW(),2)=0"}]},
-                    "format": {"backgroundColor": LIGHT_GRAY}
-                }
-            },
-            "index": 0
-        }},
+
         # Column widths BOQ
         {"updateDimensionProperties": {
             "range": {"sheetId": 0, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 1},
@@ -306,6 +296,45 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
             "cell": {"userEnteredFormat": {"wrapStrategy": "WRAP", "verticalAlignment": "TOP", "textFormat": {"fontSize": 8}}},
             "fields": "userEnteredFormat"
         }},
+        # Center all data cells
+        {"repeatCell": {
+            "range": {"sheetId": 0, "startRowIndex": header_row, "endRowIndex": last_item_row + 2, "startColumnIndex": 0, "endColumnIndex": 12},
+            "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}},
+            "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment"
+        }},
+        # Description column left align
+        {"repeatCell": {
+            "range": {"sheetId": 0, "startRowIndex": header_row, "endRowIndex": last_item_row, "startColumnIndex": 7, "endColumnIndex": 8},
+            "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT"}},
+            "fields": "userEnteredFormat.horizontalAlignment"
+        }},
+        # Grand total row - green highlight
+        {"repeatCell": {
+            "range": {"sheetId": 0, "startRowIndex": last_item_row, "endRowIndex": last_item_row + 1, "startColumnIndex": 0, "endColumnIndex": 12},
+            "cell": {"userEnteredFormat": {
+                "backgroundColor": {"red": 0.07, "green": 0.07, "blue": 0.07},
+                "textFormat": {"bold": True, "foregroundColor": {"red": 1, "green": 1, "blue": 1}},
+                "horizontalAlignment": "CENTER",
+            }},
+            "fields": "userEnteredFormat"
+        }},
+        # Date right align
+        {"repeatCell": {
+            "range": {"sheetId": 0, "startRowIndex": 3, "endRowIndex": 4, "startColumnIndex": 0, "endColumnIndex": 12},
+            "cell": {"userEnteredFormat": {"horizontalAlignment": "RIGHT"}},
+            "fields": "userEnteredFormat.horizontalAlignment"
+        }},
+        # Project name left align
+        {"repeatCell": {
+            "range": {"sheetId": 0, "startRowIndex": 3, "endRowIndex": 4, "startColumnIndex": 0, "endColumnIndex": 5},
+            "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT"}},
+            "fields": "userEnteredFormat.horizontalAlignment"
+        }},
+        # Merge date cell F4:L4
+        {"mergeCells": {
+            "range": {"sheetId": 0, "startRowIndex": 3, "endRowIndex": 4, "startColumnIndex": 5, "endColumnIndex": 12},
+            "mergeType": "MERGE_ALL"
+        }},
         # Merge title cell
         {"mergeCells": {
             "range": {"sheetId": 0, "startRowIndex": 2, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 6},
@@ -357,9 +386,63 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
         }},
     ]
 
+    # Hide gridlines on both sheets
+    requests_fmt.insert(0, {"updateSheetProperties": {
+        "properties": {"sheetId": 0, "gridProperties": {"hideGridlines": True}},
+        "fields": "gridProperties.hideGridlines"
+    }})
+    requests_fmt.insert(1, {"updateSheetProperties": {
+        "properties": {"sheetId": 1, "gridProperties": {"hideGridlines": True}},
+        "fields": "gridProperties.hideGridlines"
+    }})
+
+    # Append cleanup at the END so it overrides any spillover
+    requests_fmt.extend([
+        {"repeatCell": {
+            "range": {"sheetId": 0, "startRowIndex": 0, "endRowIndex": last_item_row + 10, "startColumnIndex": 12, "endColumnIndex": 26},
+            "cell": {"userEnteredFormat": {
+                "backgroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
+                "textFormat": {"bold": False, "foregroundColor": {"red": 0, "green": 0, "blue": 0}}
+            }},
+            "fields": "userEnteredFormat"
+        }},
+    ])
+
     sheets.spreadsheets().batchUpdate(
         spreadsheetId=ss_id,
         body={"requests": requests_fmt}
+    ).execute()
+
+    # Format currency columns (K=10, L=11) as ₹
+    sheets.spreadsheets().values().batchUpdate(
+        spreadsheetId=ss_id,
+        body={"valueInputOption": "USER_ENTERED", "data": []}
+    )
+    sheets.spreadsheets().batchUpdate(
+        spreadsheetId=ss_id,
+        body={"requests": [
+            {"repeatCell": {
+                "range": {"sheetId": 0, "startRowIndex": header_row + 1, "endRowIndex": last_item_row + 1, "startColumnIndex": 10, "endColumnIndex": 12},
+                "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "₹#,##0.00"}}},
+                "fields": "userEnteredFormat.numberFormat"
+            }},
+        ]}
+    ).execute()
+
+    # Format currency columns (K=10, L=11) as ₹
+    sheets.spreadsheets().values().batchUpdate(
+        spreadsheetId=ss_id,
+        body={"valueInputOption": "USER_ENTERED", "data": []}
+    )
+    sheets.spreadsheets().batchUpdate(
+        spreadsheetId=ss_id,
+        body={"requests": [
+            {"repeatCell": {
+                "range": {"sheetId": 0, "startRowIndex": header_row + 1, "endRowIndex": last_item_row + 1, "startColumnIndex": 10, "endColumnIndex": 12},
+                "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "₹#,##0.00"}}},
+                "fields": "userEnteredFormat.numberFormat"
+            }},
+        ]}
     ).execute()
 
     # ── Insert product images via IMAGE formula ─────────
