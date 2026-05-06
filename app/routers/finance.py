@@ -27,6 +27,7 @@ class InvoiceCreate(BaseModel):
     discount_pct: Optional[Decimal] = Decimal("0")
     subtotal: Optional[Decimal] = None
     discount_amount: Optional[Decimal] = None
+    gst_amount: Optional[Decimal] = None
     notes: Optional[str] = None
     line_items: Optional[List[InvoiceLineItemCreate]] = []
 
