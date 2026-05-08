@@ -152,6 +152,10 @@ class BoqLineItemResponse(BaseModel):
     product_name: str
     quantity: int
     unit_price: Decimal
+    mrp_gst: Optional[Decimal] = None
+    flagship_mrp: Optional[Decimal] = None
+    dealer_mrp: Optional[Decimal] = None
+    landing_inr: Optional[Decimal] = None
     discount_pct: Decimal
     line_total: Decimal
     notes: Optional[str]
