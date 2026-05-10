@@ -13,3 +13,4 @@ python-dotenv
 python-multipart
 PyJWT
 PyJWT
+httpx
