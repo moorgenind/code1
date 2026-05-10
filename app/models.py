@@ -346,3 +346,59 @@ class Shipment(Base):
     driver_phone = Column(String(50), nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# ============================================================
+# TASKS MODULE
+# ============================================================
+
+class Employee(Base):
+    __tablename__ = "employees"
+
+    employee_id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    email = Column(String(255), unique=True, nullable=True)
+    role = Column(String(100), nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    tasks = relationship("Task", back_populates="employee")
+    recurring_templates = relationship("RecurringTemplate", back_populates="employee")
+
+
+class RecurringTemplate(Base):
+    __tablename__ = "recurring_templates"
+
+    template_id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    employee_id = Column(Integer, ForeignKey("employees.employee_id"), nullable=False)
+    priority = Column(String(20), default="medium")
+    frequency = Column(String(20), default="daily")
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    employee = relationship("Employee", back_populates="recurring_templates")
+
+
+class Task(Base):
+    __tablename__ = "tasks"
+
+    task_id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    employee_id = Column(Integer, ForeignKey("employees.employee_id"), nullable=False)
+    assigned_by = Column(String(100), default="admin")
+    priority = Column(String(20), default="medium")
+    status = Column(String(20), default="pending")
+    due_date = Column(DateTime, nullable=True)
+    linked_lead_id = Column(Integer, ForeignKey("leads.lead_id"), nullable=True)
+    linked_label = Column(String(255), nullable=True)
+    is_ai_suggested = Column(Boolean, default=False)
+    is_recurring = Column(Boolean, default=False)
+    template_id = Column(Integer, ForeignKey("recurring_templates.template_id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    employee = relationship("Employee", back_populates="tasks")
+    lead = relationship("Lead", foreign_keys=[linked_lead_id])
