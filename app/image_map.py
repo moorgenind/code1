@@ -152,3 +152,133 @@ def get_image_url(family: str, product_name: str, body_color: str = None, trim: 
     if best_id:
         return f"https://drive.google.com/thumbnail?id={best_id}&sz=w200"
     return None
+
+
+# ============ DECORATIVE IMAGE MAP ============
+DEC_IMAGE_MAP = {
+    # Table Lamps
+    "melting blossom": "1K4NuNE974b2Q5hK6tWFeVOfPoJ4cGcWK",
+    "yulong": "1glo8Jenly7oBNAIdxq9LCSkSQd76-Oel",
+    "angling": "1IM7EQe1XBLAL9wqcqjvPYB7hL_glgAIS",
+    "extragalactic": "1DAWfws3CBwikgFlY4lFINftu-OxFqcQM",
+    "matcha": "195fvAgwMhhT8VEnU6msi3s9mfl7e69my",
+    "clove": "1eU8IJ2YUkddZsHB-ndN8ezzTee_D9fru",
+    "guzzle": "1IIjZepS4PN4OiB2O_3KtKVz9AbWCwD5c",
+    "fair lady.w": "17Mcnrl3bKSFoPj8xMpFioO9qqFLyke1m",
+    "brownie": "114SPLrQIzKFWmtno4fdu9vbtat4djUnl",
+    "lychee": "10qvWYxIe6TUO7rSeMIQewcqvKmj0oBIF",
+    "bowknot": "1OTOSzzlpiWKa_Dzxm8W9nlZtwBt45-cM",
+    "amber": "1MRQCEQ-dWgWbxWlAGxx318PCIMyMb9gv",
+    "fair lady.k": "1pMzZjcNcyw3-VylTvliI9Qd4H6CndGWs",
+    "s series": "1ggdohWZN9aevp3YDQxZK74JHnEh1YSTq",
+    "zhizai·1": "1_hTNjw_MR7ULx6nTKBf6DKaRlCWqnpMu",
+    "nacre": "1YKYhAJbl4y5IMfqt2TMRCSC4v4rJeBGH",
+    "zhizai·9": "1c-nkj3fhGWk-_U8mKy_BYh1V30heA0Vr",
+    "zhizai·6": "1VPXF2tEy965cd3n-0wBmIHU5rDtUBlEh",
+    "pearl": "12HCWnBkbxH7Ow72MGXkPpfx2DSFDMgyb",
+    "royal series - square": "1WQj9HqOWPqRC-cbSI2nsxlnvbo5ReGR0",
+    "royal palace": "1WQj9HqOWPqRC-cbSI2nsxlnvbo5ReGR0",
+    "ruth france": "1CGruXhJ7FFGoB99zP-t865jWFSRyGlaG",
+    "good night": "1WHH5DkLLgIPzqSNjDRLQJigcE3aDvEDd",
+    "magic": "15aWQqHh9Mg7OGrGQApq5007n6EyyXw-V",
+    "hennessy": "19sCJZVSgRDgoEZMW4ztW4ireI5SU3FrB",
+    "oud royal": "1t1C0Iw5xsLRCEQFeN2RmmAidjcNsJq4I",
+    "zhizai·7": "1yZGRnqZ4W5AqyXqUK3UpkKloqOvYLnOW",
+    "perfumer": "1--xqxprkj-T34AApy-upw59wy9K-LXo2",
+    "dunhuang": "1irMs4ypwquwwR-oOWocFOTWrgLXHnOX3",
+    "aurora": "1kYEGzimG45d8Z_yCL9SH4DxQLdUJXFsg",
+    "royal series - round": "1-fQcJO5wfjhCjUxokC1Bn5pd-wjTf7tr",
+    "diana": "1QaYHLJ8F_5T3vYrO8BmGwbVRX2r3CENJ",
+    "aurea": "1e_9WkRvA23Iq7-73hDTllWXDdjds-EuG",
+    "ridge": "1SxZsn9icSxXtjrNoXLiZa7-rRDl8Y3w1",
+    "lily": "1J41doWtbwKfZCFs7tHj9LYKHMjhN92sT",
+    "jade butterfly": "1AZOx4KG5iL5ftxqyZeREHBbPqSs3Zjib",
+    "zhizai·8": "1nl8nLay8Zoy6T6zadYQmeO67skzZB1R_",
+    "cloud": "1VDYOdAjati7LLOf_OGbLDsOyoZrdYs1r",
+    "agate": "1LXYiIVunfdUm8CG9YZBp8iME_gDxuS7i",
+    "bella": "1mW9epr-vqVM0HbOIp8xMBwCqeuwCizdK",
+    "ivory": "1BS6zTOLYYLrieIeAxOPA6aqlg3YnzXdB",
+    "monroe": "1hU7FmMuarBSwAgeD1TRjXEv-2-06RQZH",
+    "dreame": "1kF2Ufx416skQWuKu3ctPE1RvKb7UwgQJ",
+    "scepter": "1TULyQgt0ssMyCV5Fk2WdRvLaqarPPGjZ",
+    "serenity": "13EXglfElRwalZZ0HMApq0yVu9chFCxZD",
+    "godfather": "1xAyAJuNleEUWZGw_h9DEYGOvlucjpfsm",
+    "king": "14YJ2RhXvV6oj7CPTstCOvPFj90Zv6EEV",
+    # Rechargeable Table Lamps
+    "\"x\"": "1vd4DzvpWMQMau0IEj6KVzMKtbtVTKMtW",
+    "quietvale": "1cjyFcbvm2Py-3yAT7fzBElHu2d_yPKA0",
+    "fire": "11UCrPMAh0jy1HXmnDl6y0au_OLBzGRFC",
+    "crystal series - curved": "1M5lvy_T2gtHvUKjYonIUtBiu57jBDf-P",
+    "metal series": "1qV04QJQWmbULe00H-oGJtUaklgIpNjY-",
+    "solitude": "1QbWEQUfYTAdBh48U__4rXGozvGZRDsxG",
+    "fluid": "1EWgso2eg6E7fnizhmkbZh7mLw62F7KyN",
+    "cheese": "1PkVpLZCAAOeDKPmdMKoojAhwQSqFs9wQ",
+    "candlelight": "1G-hSuomIMZfOmanV3fSLvKAYxguaYi7m",
+    "whisky": "1oHBHbNjHCCCxF3SFG0wEk_goIuQ_CGTF",
+    "air series": "1fCW-t6OAanrM1eY0QT-07UgOIs7tDwRn",
+    "luminate series - bevel": "1WCUxVjSFNkx8rpONLj_aCwaAE_ZYG61J",
+    "hyponex": "1U6VOTGRoXTvuZqfHK3y4-xrxrQ1qLfZ6",
+    "salute": "1xLHoPPjiaUIBwwwpOZQBG0kojmA40Vje",
+    "luminate": "1sASkHeHdFOgFD8m1vAMIJd2aDWymba9v",
+    "crystal series": "1nHG0B7ezwMxh8q6XelN5L1GglUblHhzm",
+    "lumia": "1GQI_9fCTFsje999Qgob0Ivp6Ol_rjXbN",
+    "champagne": "1H8IYabWH6jl-KQztBvPsWTkvbY1aeKZg",
+    # Floor Lamps
+    "black label": "1gI9xp84BrP_heH2Ex39ktyfmmGZQJ0dR",
+    "madeline": "1jrQzFvabh3btz3jyyDfpLXUxTmI05byh",
+    "flambeau": "15vObMrbrhRk9BrI19v4kLVmChZjR8GAS",
+    "hydrogen": "1yumGzqSBft0L6rFlu_36s7DtLEyfo9F8",
+    "glacier.n": "1mXp7zCrON-QJV_VRT-jRWQUhkZQE0d0T",
+    "madagascar": "10XMVDKHjmSF8IPIoF_57VlPz06cpIJxx",
+    "innersun": "1fkgOiQ7v6tyebQ0FuF0dHJkhuSq_AzT8",
+    "black amber": "1Juurd1lR_7NZ4Z5l1xHp5-8Tq3h6GeE-",
+    "glacier series": "1MFcc9IQfZ-KdRIUQo_3CjwW7WNph0tfX",
+    "hillbilly cat": "1ly6hU3Y_h2cj362V7L2zIhwz-CNpVwei",
+    "business": "1mdTatVqz0CX2h4ibwljzmFAZrbcszBek",
+    "clear shadow": "1Lm2t80Udaj8qJXbNp25eO9V-c4OZZn7N",
+    "zhizai·2": "1lcffRuvdJd3Cse3KvqcRjuTjdPWb4j_0",
+    "floating light": "1q9kqE5Bm1jvcNzpvTQ_duxwe6u3nvgSp",
+    "red label": "1G7jsKB8LxEo_guPJ6dYXZu7_wkSVUvfp",
+    "chenin blanc": "1wqr9IVQpc2f9g0aogVx3AxvejmB9BT3m",
+    "glow angler": "1R7p0BHLnZcGz5E8qN4s_XkbAPI0Sce-K",
+    # Pendant Lamps
+    "gabriel": "1WF61xl7oiihcz7KcnyzF9_Qs8Fyk7Lfd",
+    "stockholm": "13KFhph_OQTD5UuqZiyzm0igHG3VWnGrO",
+    "tequila": "1LR0iSRYpeKO60g6kcZCpTjeKiwMYk2Hf",
+    "himalayas": "1rkIvkZ3J5_3SzVM-yVhUDHrHMH3ENX8r",
+    "ness": "1Y6gJs6w1GZed6DDRlCmZ1tPcY7m1Mj2y",
+    "meteor": "1YoCEIfvlsLR67f2EkPj37S5NfTNmNTgV",
+    "sun star": "1nhhrSW6Zg1ZfriU42Et1jEFlCBZHY0i5",
+    "ballet": "12-wCbl0n5Q9aPEzlUfH6umRVK_33Xgv8",
+    "star of south africa": "1ji-cdQPEkGgAMiMCH6V6ohaL_67yOkUS",
+    "instant": "1wgMFhmdIJkUFjIABhqc5MC3oJJ1xpdR4",
+    # Wall Lamps
+    "tuberose": "1YuIAooiDZO8HfCbukqTAS0XniF_cP3cN",
+    "tux": "1LoO845TvNeFOrmV6CRKFNj_jDgsI575Z",
+    "barcadi": "1wZB1mDK_Ni_vdzGrhG9_jj84qR1f-Bys",
+    "stilton": "1JAIXZhKo341VhNe-ZL10Jb9wQalilLKx",
+    "conquistador": "1vsMKYcvbSEVcWZXT1fyFUcG9rUKMIQ-Y",
+    # Outdoor
+    "defense": "1nW9JhBFaiWxWN628I1v4qBERbZ_sWv",
+}
+
+
+def get_dec_image_url(family: str, product_name: str = None) -> str:
+    """Find best matching image for a decorative product by series name."""
+    if not family:
+        return None
+    search = family.lower()
+
+    # Try direct keyword match
+    for keyword, file_id in DEC_IMAGE_MAP.items():
+        if keyword in search:
+            return f"https://drive.google.com/thumbnail?id={file_id}&sz=w300"
+
+    # Try matching against product name
+    if product_name:
+        name_search = product_name.lower()
+        for keyword, file_id in DEC_IMAGE_MAP.items():
+            if keyword in name_search:
+                return f"https://drive.google.com/thumbnail?id={file_id}&sz=w300"
+
+    return None
