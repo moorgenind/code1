@@ -1,72 +1,78 @@
-from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, extract
-from typing import Optional
+from sqlalchemy import or_
 from app.database import get_db
 from app import models
 
 router = APIRouter()
 
+STAGE_LABELS = {
+    'boq': 'BOQ Preparation',
+    'order_placed': 'Order Placed',
+    'site_coordination': 'Site Coordination',
+    'material_delivery': 'Material Delivery',
+    'installation': 'Installation',
+    'testing': 'Testing & Commissioning',
+    'handover': 'Handover',
+}
+
+STAGE_ORDER = ['boq', 'order_placed', 'site_coordination', 'material_delivery', 'installation', 'testing', 'handover']
+
 @router.get("/{token}")
-def get_dealer_portal(
-    token: str,
-    month: Optional[int] = None,
-    quarter: Optional[int] = None,
-    year: Optional[int] = None,
-    db: Session = Depends(get_db)
-):
+def get_dealer_portal(token: str, db: Session = Depends(get_db)):
     dealer = db.query(models.Dealer).filter(
         (models.Dealer.dealer_token == token) | (models.Dealer.slug == token)
     ).first()
     if not dealer:
         raise HTTPException(status_code=404, detail="Invalid portal link")
 
-    states = dealer.portal_states or []
-    assigned_ids = dealer.assigned_lead_ids or []
+    # Only show won leads linked to this dealer
+    leads = db.query(models.Lead).filter(
+        models.Lead.dealer_id == dealer.dealer_id,
+        models.Lead.status == 'won'
+    ).order_by(models.Lead.created_at.desc()).all()
 
-    query = db.query(models.Lead).filter(
-        or_(
-            models.Lead.city.in_(get_cities_for_states(states)),
-            models.Lead.dealer_id == dealer.dealer_id,
-            models.Lead.lead_id.in_(assigned_ids),
-            models.Lead.channel.in_(['flagship', 'flagship_dealer'])
-        )
-    )
+    projects = []
+    for lead in leads:
+        tracking = db.query(models.ProjectTracking).filter(
+            models.ProjectTracking.lead_id == lead.lead_id
+        ).first()
+        snags = db.query(models.ProjectSnag).filter(
+            models.ProjectSnag.lead_id == lead.lead_id,
+            models.ProjectSnag.status == 'open'
+        ).count()
+        visits = db.query(models.SiteVisit).filter(
+            models.SiteVisit.lead_id == lead.lead_id
+        ).order_by(models.SiteVisit.visit_date.desc()).first()
 
-    # Default: rolling 12 months if no filters specified
-    if not year and not month and not quarter:
-        twelve_months_ago = datetime.utcnow() - timedelta(days=365)
-        query = query.filter(models.Lead.created_at >= twelve_months_ago)
+        current_stage = tracking.current_stage if tracking else 'boq'
+        stage_idx = STAGE_ORDER.index(current_stage) if current_stage in STAGE_ORDER else 0
 
-    if year:
-        query = query.filter(extract('year', models.Lead.created_at) == year)
-    if month:
-        query = query.filter(extract('month', models.Lead.created_at) == month)
-    if quarter:
-        query = query.filter(extract('quarter', models.Lead.created_at) == quarter)
+        boq_value = sum(float(b.total_amount or 0) for b in lead.boqs)
 
-    leads = query.order_by(models.Lead.created_at.desc()).all()
-
-    total = len(leads)
-    by_status = {}
-    for l in leads:
-        by_status[l.status] = by_status.get(l.status, 0) + 1
-
-    active_leads = [l for l in leads if l.status != 'lost']
-    lost_leads = [l for l in leads if l.status == 'lost']
-    won_leads = [l for l in leads if l.status == 'won']
-
-    pipeline_value = sum(float(b.total_amount or 0) for l in active_leads for b in l.boqs)
-    won_value = sum(float(b.total_amount or 0) for l in won_leads for b in l.boqs)
-    total_value = sum(float(b.total_amount or 0) for l in leads for b in l.boqs)
-    win_rate = round(len(won_leads) / total * 100) if total > 0 else 0
-    avg_project_size = round(pipeline_value / len(active_leads)) if active_leads else 0
-
-    by_category = {}
-    for l in leads:
-        cat = l.category or 'other'
-        by_category[cat] = by_category.get(cat, 0) + 1
+        projects.append({
+            "lead_id": lead.lead_id,
+            "lead_code": lead.lead_code,
+            "client_name": lead.client_name,
+            "project_name": lead.project_name,
+            "city": lead.city,
+            "category": lead.category,
+            "boq_value": boq_value,
+            "created_at": lead.created_at.isoformat() if lead.created_at else None,
+            "current_stage": current_stage,
+            "current_stage_label": STAGE_LABELS.get(current_stage, current_stage),
+            "stage_index": stage_idx,
+            "total_stages": len(STAGE_ORDER),
+            "open_snags": snags,
+            "last_visit": visits.visit_date.isoformat() if visits and visits.visit_date else None,
+            "tracking": {
+                "order_placed_date": tracking.order_placed_date.isoformat() if tracking and tracking.order_placed_date else None,
+                "material_delivery_date": tracking.material_delivery_date.isoformat() if tracking and tracking.material_delivery_date else None,
+                "installation_date": tracking.installation_date.isoformat() if tracking and tracking.installation_date else None,
+                "handover_date": tracking.handover_date.isoformat() if tracking and tracking.handover_date else None,
+                "expected_delivery": tracking.expected_delivery.isoformat() if tracking and tracking.expected_delivery else None,
+            } if tracking else {},
+        })
 
     return {
         "dealer": {
@@ -76,65 +82,11 @@ def get_dealer_portal(
             "city": dealer.city,
             "state": dealer.state,
         },
-        "leads": [
-            {
-                "lead_id": l.lead_id,
-                "lead_code": l.lead_code,
-                "client_name": l.client_name,
-                "project_name": l.project_name,
-                "city": l.city,
-                "status": l.status,
-                "category": l.category,
-                "created_at": l.created_at.isoformat() if l.created_at else None,
-                "boq_value": sum(float(b.total_amount or 0) for b in l.boqs),
-                "boqs": [
-                    {
-                        "boq_id": b.boq_id,
-                        "boq_code": b.boq_code,
-                        "category": b.category,
-                        "status": b.status,
-                        "total_amount": float(b.total_amount) if b.total_amount else 0,
-                        "line_items": [
-                            {
-                                "line_item_id": i.line_item_id,
-                                "level": i.level,
-                                "area": i.area,
-                                "product_sku": i.product_sku,
-                                "product_name": i.product_name,
-                                "quantity": i.quantity,
-                                "unit_price": float(i.unit_price) if i.unit_price else 0,
-                                "line_total": float(i.line_total) if i.line_total else 0,
-                                "image_url": i.image_url,
-                            }
-                            for i in b.line_items
-                        ]
-                    }
-                    for b in l.boqs
-                ]
-            }
-            for l in leads
-        ],
+        "projects": projects,
         "summary": {
-            "total_leads": total,
-            "active_leads": len(active_leads),
-            "won_leads": len(won_leads),
-            "lost_leads": len(lost_leads),
-            "win_rate": win_rate,
-            "pipeline_value": pipeline_value,
-            "won_value": won_value,
-            "total_boq_value": total_value,
-            "avg_project_size": avg_project_size,
-            "by_status": by_status,
-            "by_category": by_category,
+            "total_projects": len(projects),
+            "in_progress": len([p for p in projects if p['current_stage'] not in ['handover']]),
+            "completed": len([p for p in projects if p['current_stage'] == 'handover']),
+            "open_snags": sum(p['open_snags'] for p in projects),
         }
     }
-
-def get_cities_for_states(states):
-    city_map = {
-        "Telangana": ["Hyderabad", "Warangal", "Nizamabad", "Karimnagar", "Khammam"],
-        "Andhra Pradesh": ["Vijayawada", "Visakhapatnam", "Guntur", "Nellore", "Tirupati", "Kakinada", "Rajahmundry"],
-    }
-    cities = []
-    for state in states:
-        cities.extend(city_map.get(state, []))
-    return cities
