@@ -49,21 +49,34 @@ def get_image_url_for_sku(sku, product_name=""):
         best_score = 0
         for entry in IMAGE_MAP:
             score = 0
-            if entry.get("family") and entry["family"].lower() in name:
-                score += 2
-            if entry.get("name") and entry["name"].lower() in name:
-                score += 3
-            if entry.get("trim"):
-                trim = entry["trim"].lower()
-                if trim in name:
+            family = entry.get("family", "").lower()
+            entry_name = entry.get("name", "").lower()
+            entry_color = entry.get("color", "").lower()
+            entry_trim = entry.get("trim", "").lower()
+
+            # For automation entries — detect by SKU prefix TB/MT/MQ
+            is_automation_sku = str(sku or "").upper().startswith(("TB", "MT", "MQ"))
+            if family == "automation":
+                if not is_automation_sku:
+                    continue
+                if entry_name and entry_name in name:
+                    score += 3
+                    if entry_color and entry_color in name:
+                        score += 2
+            else:
+                if family and family in name:
+                    score += 2
+                if entry_name and entry_name in name:
+                    score += 3
+                if entry_trim and entry_trim in name:
                     score += 1
-            if entry.get("color"):
-                color = entry["color"].lower()
-                if color in name:
+                if entry_color and entry_color in name:
                     score += 1
+
             if score > best_score:
                 best_score = score
                 best = entry
+
         if best and best_score >= 3:
             return f"https://drive.google.com/thumbnail?id={best['id']}&sz=w200"
     except Exception as e:
