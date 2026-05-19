@@ -100,6 +100,7 @@ def get_architectural_filters(
     beam_angle: str = None,
     body_color: str = None,
     cup_color: str = None,
+    length: str = None,
     db: Session = Depends(get_db),
 ):
     """Cascading filter options for architectural lighting."""
@@ -128,7 +129,7 @@ def get_architectural_filters(
         vals = set()
         for p in products:
             v = getattr(p, field, None)
-            if v and str(v).strip() and str(v).strip() != "/":
+            if v is not None and str(v).strip() and str(v).strip() != "/":
                 vals.add(str(v).strip())
         return sorted(vals)
 
@@ -246,3 +247,4 @@ def get_decorative_filters(
         ],
         "total_matches": len(products),
     }
+# patch applied below — see get_architectural_filters fix
