@@ -91,63 +91,8 @@ IMAGE_MAP = [
     {"family": "pattaya series iii", "name": "55 round", "id": "1BhorUvI571aaznGTSHk5SlynmIKaKoia"},
     {"family": "pattaya series iii", "name": "75 round", "id": "1AJHYovKPxUxjL878d6qiunpNSfgZQ-r_"},
     {"family": "pattaya",            "name": "75 round", "id": "1EGr6bmz7RaBPSWL__huLHb8DgUMfjNiw"},
-]
 
 
-def get_image_url(family: str, product_name: str, body_color: str = None, trim: str = None) -> str:
-    """Find the best matching Drive thumbnail URL for a product."""
-    if not family or not product_name:
-        return None
-
-    fam = family.lower()
-    name = product_name.lower()
-    color = (body_color or "").lower()
-    tr = (trim or "").lower()
-
-    best_id = None
-    best_score = -1
-
-    for entry in IMAGE_MAP:
-        # Check family match
-        entry_fam = entry["family"].lower()
-        if entry_fam not in fam and fam not in entry_fam:
-            continue
-
-        score = 0
-        # Check name keywords
-        name_kw = entry.get("name", "")
-        if name_kw and name_kw in name:
-            score += 2
-        elif name_kw:
-            continue  # name keyword must match
-
-        # Check name2 (secondary name keyword)
-        name2_kw = entry.get("name2", "")
-        if name2_kw:
-            if name2_kw in name:
-                score += 2
-            else:
-                continue
-
-        # Check trim
-        trim_kw = entry.get("trim", "")
-        if trim_kw:
-            if trim_kw == tr:
-                score += 2
-            else:
-                continue
-
-        # Check color (optional bonus)
-        color_kw = entry.get("color", "")
-        if color_kw:
-            if color_kw in color:
-                score += 1
-            else:
-                continue
-
-        if score > best_score:
-            best_score = score
-            best_id = entry["id",
     # ============ AUTOMATION - KEYPADS ============
     # Swiss Plastic Panel
     {"family": "automation", "name": "swiss plastic three-channel panel", "color": "champagne silver", "id": "1ubr2EtNoOz2QhMEZ2yrYnPn5mlVY9hWF"},
@@ -358,3 +303,61 @@ def get_image_url(family: str, product_name: str, body_color: str = None, trim: 
     {"family": "automation", "name": "waterproof presence sensor", "color": "black", "id": "1BBgSR8hZ-pkeSCjxYZjcMxmvARMtvhus"},
     {"family": "automation", "name": "waterproof presence sensor", "color": "white", "id": "1ng7AyHC6h6LDuae8LNOVw7m4Wxprm3wc"},
 ]
+
+def get_image_url(family: str, product_name: str, body_color: str = None, trim: str = None) -> str:
+    """Find the best matching Drive thumbnail URL for a product."""
+    if not family or not product_name:
+        return None
+
+    fam = family.lower()
+    name = product_name.lower()
+    color = (body_color or "").lower()
+    tr = (trim or "").lower()
+
+    best_id = None
+    best_score = -1
+
+    for entry in IMAGE_MAP:
+        # Check family match
+        entry_fam = entry["family"].lower()
+        if entry_fam not in fam and fam not in entry_fam:
+            continue
+
+        score = 0
+        # Check name keywords
+        name_kw = entry.get("name", "")
+        if name_kw and name_kw in name:
+            score += 2
+        elif name_kw:
+            continue  # name keyword must match
+
+        # Check name2 (secondary name keyword)
+        name2_kw = entry.get("name2", "")
+        if name2_kw:
+            if name2_kw in name:
+                score += 2
+            else:
+                continue
+
+        # Check trim
+        trim_kw = entry.get("trim", "")
+        if trim_kw:
+            if trim_kw == tr:
+                score += 2
+            else:
+                continue
+
+        # Check color (optional bonus)
+        color_kw = entry.get("color", "")
+        if color_kw:
+            if color_kw in color:
+                score += 1
+            else:
+                continue
+
+        if score > best_score:
+            best_score = score
+            best_id = entry["id"]
+    if best_id:
+        return f"https://drive.google.com/thumbnail?id={best_id}&sz=w200"
+    return None
