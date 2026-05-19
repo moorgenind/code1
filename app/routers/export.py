@@ -40,10 +40,26 @@ def get_sheets():
 def get_drive():
     return build("drive", "v3", credentials=get_creds())
 
-def get_image_url_for_sku(sku, product_name=""):
+def get_product_name_from_db(sku, db=None):
+    """Fetch full product name from DB by SKU for better image matching."""
+    if not db or not sku:
+        return None
+    try:
+        from app import models
+        p = db.query(models.Product).filter(models.Product.sku == sku).first()
+        return p.name if p else None
+    except:
+        return None
+
+def get_image_url_for_sku(sku, product_name="", db=None):
     """Get Drive thumbnail URL using image_map.py"""
     try:
         from app.image_map import IMAGE_MAP
+        # Try to get full product name from DB for better matching
+        if db:
+            db_name = get_product_name_from_db(sku, db)
+            if db_name:
+                product_name = db_name
         name = str(product_name or sku or "").lower()
         best = None
         best_score = 0
@@ -463,7 +479,7 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
     image_updates = []
     for idx, item in enumerate(items):
         row_num = header_row + 2 + idx  # 1-indexed for A1 notation
-        img_url = item.image_url or get_image_url_for_sku(item.product_sku, item.product_name or '')
+        img_url = get_image_url_for_sku(item.product_sku, item.product_name or '', db=db)
         if img_url:
             image_updates.append({
                 "range": f"BOQ!F{row_num}",
