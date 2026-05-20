@@ -479,7 +479,11 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
     image_updates = []
     for idx, item in enumerate(items):
         row_num = header_row + 2 + idx  # 1-indexed for A1 notation
-        img_url = get_image_url_for_sku(item.product_sku, item.product_name or '', db=db)
+        # Skip image lookup for OEM products
+        if str(item.product_sku or '').upper().startswith('OEM'):
+            img_url = None
+        else:
+            img_url = get_image_url_for_sku(item.product_sku, item.product_name or '', db=db)
         if img_url:
             image_updates.append({
                 "range": f"BOQ!F{row_num}",
