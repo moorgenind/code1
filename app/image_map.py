@@ -357,7 +357,32 @@ def get_image_url(family: str, product_name: str, body_color: str = None, trim: 
 
         if score > best_score:
             best_score = score
-            best_id = entry["id"]
-    if best_id:
-        return f"https://drive.google.com/thumbnail?id={best_id}&sz=w200"
-    return None
+            best_id = entry["id"
+    # ============ OEM PRODUCTS ============
+    {"family": "oem", "name": "10mm magnetic track", "id": "1z7_DKQ4skqmMZPCnXKsOkxZg9W56G5Da"},
+    {"family": "oem", "name": "12w bollard", "id": "1gVBGYqStYPEwtK03S0-sPswt0yY9Lo8n"},
+    {"family": "oem", "name": "12w cob", "id": "1Be7hkNeyPFrfknmowS4ZEufoUhIvFi3v"},
+    {"family": "oem", "name": "16w surface diffused", "id": "15TEHJ1ogW48yDPa6W5tukgGZ-Z0soUaG"},
+    {"family": "oem", "name": "18w deep recessed downlight", "id": "11nZLJ3pa80KAu8C19EGw9twKt3sQMvxS"},
+    {"family": "oem", "name": "18w surface cob", "id": "1sYCahkcqQzs_59OCxW583zgFG5Nff5SX"},
+    {"family": "oem", "name": "20w surface cob", "id": "1CwHtX1sa5JtCS0R4yAXEYyQQzX6WCdr3"},
+    {"family": "oem", "name": "30w led suspended linear", "id": "1qf5BK0Ie4gdfBabJWdPat7aCbYc2DZbx"},
+    {"family": "oem", "name": "3w recessed cob", "id": "16qMKF3jPkOM9XJwqqLZ5p8HbujCwTuAN"},
+    {"family": "oem", "name": "3w spotlight", "id": "1lF8P0Bjm33YLlCna7gAhFdIqXXX9FFyR"},
+    {"family": "oem", "name": "50w dali driver", "id": "11xDuXwKQZsOhgTsUG4sc-DtLFMJHPRNK"},
+    {"family": "oem", "name": "7w recessed cob 3k", "id": "19ztGJtBZPRnmr24ScWPEA4MDW6pAdrq2"},
+    {"family": "oem", "name": "7w recessed cob ip", "id": "1MhBxQ3aHhJvw6aWHT2Yc3D1DJsBne_FH"},
+    {"family": "oem", "name": "7w recessed cob", "id": "1iVk8ngXyZauX4ZqEMn9ViU3boGs1VAFs"},
+    {"family": "oem", "name": "8mm strip light", "id": "13MBjVZSOR6GpPaeyyhZJ_oP7a6a-vx_t"},
+    {"family": "oem", "name": "8w surface downlight", "id": "1snfqVngJDtTF9loKlitGdBZt9NJUIvjE"},
+    {"family": "oem", "name": "9-24w dali driver", "id": "1Y84F3lFkm_HJ_kqkkwPUUA5ngybyJmji"},
+    {"family": "oem", "name": "cc dali driver", "id": "1zVaAie4WkJ2juutxkMlPsVVkh8DzDHXi"},
+    {"family": "oem", "name": "concealed panel lights", "id": "1nbVrvmB5BIffX9zkcAPQYtpPKcz1v0xk"},
+    {"family": "oem", "name": "connectors for track", "id": "1xBHnflrCf1kpX8Adxxzwxpc9ZcG7XBKu"},
+    {"family": "oem", "name": "cove profile light", "id": "1_TPI8irTSXfOAPlywPy3Z27VDbQF1Eaf"},
+    {"family": "oem", "name": "curtain grazer", "id": "17tupG7gdo1Zg7nyZ9LzM1fWWC08j0s8f"},
+    {"family": "oem", "name": "curve profile", "id": "1pj4YYFgrJzwjsrgw2uKfqN6xYu0hbQOd"},
+    {"family": "oem", "name": "cv dali driver", "id": "115XmcRrRZ91_16z5Voqg67j_ZdNwY-V1"},
+    {"family": "oem", "name": "dali driver", "id": "1e7sVkHg3CVXg2O-soXMauXBQred5hm_R"},
+    {"family": "oem", "name": "fibre optics", "id": "1mK_BBPrRXqNiR3tuZeaNSa7LwtywGCT8"},
+]
