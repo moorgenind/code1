@@ -81,11 +81,6 @@ def get_image_url_for_sku(sku, product_name="", db=None):
                     continue
                 if entry_name and entry_name in name:
                     score += 3
-                continue
-                if entry_name and entry_name in name:
-                    score += 3
-                    if entry_color and entry_color in name:
-                        score += 2
             else:
                 if family and family in name:
                     score += 2
