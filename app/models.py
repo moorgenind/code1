@@ -32,7 +32,7 @@ class Dealer(Base):
     gstin = Column(String(50), nullable=True)
 
     clients = relationship("Client", back_populates="dealer")
-    leads = relationship("Lead", back_populates="dealer", foreign_keys="Lead.dealer_id")
+    leads = relationship("Lead", back_populates="dealer", foreign_keys="[Lead.dealer_id]")
 
 
 class Client(Base):
@@ -120,7 +120,7 @@ class Lead(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     client = relationship("Client", back_populates="leads")
-    dealer = relationship("Dealer", back_populates="leads")
+    dealer = relationship("Dealer", back_populates="leads", foreign_keys="[Lead.dealer_id]")
     locked_by_dealer_id = Column(Integer, ForeignKey("dealers.dealer_id"), nullable=True)
     locked_at = Column(DateTime(timezone=True), nullable=True)
     lock_expires_at = Column(DateTime(timezone=True), nullable=True)
