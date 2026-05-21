@@ -100,7 +100,7 @@ def get_dealer_leads(token: str, db: Session = Depends(get_db)):
     
     result = []
     for lead in leads:
-        boqs = db.query(models.BOQ).filter(models.BOQ.lead_id == lead.lead_id).all()
+        boqs = db.query(models.Boq).filter(models.Boq.lead_id == lead.lead_id).all()
         boq_value = sum(float(b.total_amount or 0) for b in boqs)
         result.append({
             "lead_id": lead.lead_id,
