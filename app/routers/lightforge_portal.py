@@ -17,14 +17,19 @@ def get_lf_portal(token: str, db: Session = Depends(get_db)):
         models.Lead.channel.in_(['flagship', 'flagship_dealer'])
     ).order_by(models.Lead.created_at.desc()).all()
 
-    # Dealers
-    dealers = db.query(models.Dealer).all()
+    # Dealers - only LightForge dealers (those with flagship_dealer leads)
+    lf_dealer_ids = set(l.dealer_id for l in leads if l.dealer_id and l.channel == "flagship_dealer")
+    dealers = db.query(models.Dealer).filter(models.Dealer.dealer_id.in_(lf_dealer_ids)).all() if lf_dealer_ids else []
     dealer_map = {d.dealer_id: d for d in dealers}
 
     # LF Invoices
     lf_invoices = db.query(models.Invoice).filter(
         models.Invoice.invoice_from == 'LightForge'
     ).all()
+
+    # B2B vs B2C split
+    b2b_leads = [l for l in leads if l.channel == 'flagship_dealer']
+    b2c_leads = [l for l in leads if l.channel == 'flagship']
 
     # Build lead summaries
     lead_summaries = []
@@ -89,6 +94,12 @@ def get_lf_portal(token: str, db: Session = Depends(get_db)):
     total_outstanding = sum(i['outstanding'] for i in invoice_summaries)
     total_collected = sum(i['paid'] for i in invoice_summaries)
 
+    # B2B vs B2C
+    b2b_summaries = [l for l in lead_summaries if l['channel'] == 'flagship_dealer']
+    b2c_summaries = [l for l in lead_summaries if l['channel'] == 'flagship']
+    b2b_won = [l for l in b2b_summaries if l['status'] == 'won']
+    b2c_won = [l for l in b2c_summaries if l['status'] == 'won']
+
     return {
         "summary": {
             "total_leads": len(lead_summaries),
@@ -100,6 +111,22 @@ def get_lf_portal(token: str, db: Session = Depends(get_db)):
             "total_invoiced": total_invoiced,
             "total_collected": total_collected,
             "total_outstanding": total_outstanding,
+            "b2b": {
+                "total": len(b2b_summaries),
+                "won": len(b2b_won),
+                "active": len([l for l in b2b_summaries if l['status'] not in ['won','lost']]),
+                "win_rate": round(len(b2b_won)/len(b2b_summaries)*100) if b2b_summaries else 0,
+                "pipeline_value": sum(l['boq_value'] for l in b2b_summaries if l['status'] not in ['won','lost']),
+                "won_value": sum(l['boq_value'] for l in b2b_won),
+            },
+            "b2c": {
+                "total": len(b2c_summaries),
+                "won": len(b2c_won),
+                "active": len([l for l in b2c_summaries if l['status'] not in ['won','lost']]),
+                "win_rate": round(len(b2c_won)/len(b2c_summaries)*100) if b2c_summaries else 0,
+                "pipeline_value": sum(l['boq_value'] for l in b2c_summaries if l['status'] not in ['won','lost']),
+                "won_value": sum(l['boq_value'] for l in b2c_won),
+            },
         },
         "leads": lead_summaries,
         "dealers": dealer_summaries,
