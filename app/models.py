@@ -1,6 +1,6 @@
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy import (
-    Column, Integer, String, Numeric, Boolean, 
+    Column, Integer, String, Numeric, Boolean, Float,
     Text, DateTime, ForeignKey
 )
 from sqlalchemy.orm import relationship
@@ -24,6 +24,12 @@ class Dealer(Base):
     slug = Column(String(100), unique=True, nullable=True)
     portal_states = Column(ARRAY(String), nullable=True)
     assigned_lead_ids = Column(ARRAY(Integer), nullable=True)
+    username = Column(String(100), unique=True, nullable=True)
+    password_hash = Column(String(255), nullable=True)
+    is_active = Column(Boolean, default=True)
+    portal_token = Column(String(255), unique=True, nullable=True)
+    special_discount_pct = Column(Float, default=50.0)
+    gstin = Column(String(50), nullable=True)
 
     clients = relationship("Client", back_populates="dealer")
     leads = relationship("Lead", back_populates="dealer")
@@ -115,6 +121,10 @@ class Lead(Base):
 
     client = relationship("Client", back_populates="leads")
     dealer = relationship("Dealer", back_populates="leads")
+    locked_by_dealer_id = Column(Integer, ForeignKey("dealers.dealer_id"), nullable=True)
+    locked_at = Column(DateTime(timezone=True), nullable=True)
+    lock_expires_at = Column(DateTime(timezone=True), nullable=True)
+    dealer_notes = Column(Text, nullable=True)
     boqs = relationship("Boq", back_populates="lead")
     design_requests = relationship("DesignRequest", back_populates="lead")
 
