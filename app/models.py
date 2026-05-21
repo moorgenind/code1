@@ -32,7 +32,7 @@ class Dealer(Base):
     gstin = Column(String(50), nullable=True)
 
     clients = relationship("Client", back_populates="dealer")
-    leads = relationship("Lead", back_populates="dealer")
+    leads = relationship("Lead", back_populates="dealer", foreign_keys="Lead.dealer_id")
 
 
 class Client(Base):
