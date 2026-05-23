@@ -111,6 +111,11 @@ class LeadResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     boqs: List['BoqResponse'] = []
+    boq_value: Optional[float] = None
+    locked_by_dealer_id: Optional[int] = None
+    locked_at: Optional[datetime] = None
+    lock_expires_at: Optional[datetime] = None
+    dealer_notes: Optional[str] = None
 
     class Config:
         from_attributes = True
