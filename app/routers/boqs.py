@@ -199,6 +199,28 @@ def update_boq_status(
     return boq
 
 
+@router.patch("/{boq_id}/line-items/{line_item_id}", response_model=schemas.BoqResponse)
+def update_line_item(boq_id: int, line_item_id: int, item: dict = Body(...), db: Session = Depends(get_db)):
+    boq = db.query(models.Boq).filter(models.Boq.boq_id == boq_id).first()
+    if not boq:
+        raise HTTPException(status_code=404, detail="BOQ not found")
+    line_item = db.query(models.BoqLineItem).filter(models.BoqLineItem.line_item_id == line_item_id).first()
+    if not line_item:
+        raise HTTPException(status_code=404, detail="Line item not found")
+    if "quantity" in item:
+        line_item.quantity = item["quantity"]
+        line_item.line_total = calculate_line_total(
+            quantity=item["quantity"],
+            unit_price=line_item.unit_price,
+            discount_pct=line_item.discount_pct or Decimal("0"),
+        )
+    if "level" in item: line_item.level = item["level"]
+    if "area" in item: line_item.area = item["area"]
+    boq.total_amount = calculate_boq_total(boq.line_items)
+    db.commit()
+    db.refresh(boq)
+    return boq
+
 @router.delete("/{boq_id}/line-items/{line_item_id}")
 def delete_line_item(
     boq_id: int,
