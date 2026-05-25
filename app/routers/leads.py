@@ -23,8 +23,12 @@ def generate_lead_code(db: Session) -> str:
     next_year_short = str(year + 1)[2:]
     prefix = f"LD-{short_year}{next_year_short}"
 
-    count = db.query(models.Lead).count()
-    number = str(count + 1).zfill(3)
+    last = db.query(models.Lead).filter(models.Lead.lead_code.like(f"{prefix}-%")).order_by(models.Lead.lead_code.desc()).first()
+    last_num = 0
+    if last and last.lead_code:
+        try: last_num = int(last.lead_code.split("-")[-1])
+        except: pass
+    number = str(last_num + 1).zfill(3)
     return f"{prefix}-{number}"
 
 
