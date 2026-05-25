@@ -92,6 +92,7 @@ def get_lead(lead_id: int, db: Session = Depends(get_db)):
 
 @router.post("/", response_model=schemas.LeadResponse)
 def create_lead(payload: schemas.LeadCreate, db: Session = Depends(get_db)):
+    import traceback
     # Generate lead code
     lead_code = generate_lead_code(db)
 
@@ -220,9 +221,13 @@ def update_lead(lead_id: int, payload: schemas.LeadCreate, db: Session = Depends
         if hasattr(lead, field):
             setattr(lead, field, value)
 
-    db.commit()
-    db.refresh(lead)
-    return lead
+    try:
+        db.commit()
+        db.refresh(lead)
+        return lead
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/{lead_id}")
