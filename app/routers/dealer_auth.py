@@ -174,6 +174,7 @@ def get_dealer_products(token: str, category: str = "", db: Session = Depends(ge
         query = query.filter(models.Product.category == category)
     products = query.order_by(models.Product.family, models.Product.name).all()
     
+    from app.routers.export import get_image_url_for_sku
     result = []
     for p in products:
         mrp = float(p.mrp_inr or p.unit_price or 0)
@@ -196,5 +197,6 @@ def get_dealer_products(token: str, category: str = "", db: Session = Depends(ge
             "dealer_price": dealer_price,
             "discount_pct": disc,
             "unit": "pcs",
+            "image_url": get_image_url_for_sku(p.sku, p.name or ''),
         })
     return result
