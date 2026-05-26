@@ -96,7 +96,7 @@ def get_image_url_for_sku(sku, product_name="", db=None):
                 best = entry
 
         if best and best_score >= 3:
-            return f"https://drive.google.com/uc?export=view&id={best['id']}"
+            return f"https://lh3.googleusercontent.com/d/{best[chr(39)]id[chr(39)]}"
     except Exception as e:
         print(f"Image lookup error: {e}")
     return None
