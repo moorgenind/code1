@@ -408,10 +408,4 @@ def get_image_url(family: str, product_name: str, body_color: str = None, trim: 
             best_score = score
             best_id = entry["id"]
 # ── Decorative category fallbacks ──────────────────────────────────────────
-{"family": "decorative", "name": "rechargeable table lamp", "id": "1jbP9LQvRC2Um7WUWWe_PnUfChE7L6TT3"},
-{"family": "decorative", "name": "table lamp", "id": "1TVAT9oyQV7PuRNP-E_4UCaUJFCFgBt_l"},
-{"family": "decorative", "name": "floor lamp", "id": "1Jn6TiDfWouCpXipT_sPzfbhyWpqsO0Z-"},
-{"family": "decorative", "name": "pendant lamp", "id": "1jQ2c8tT0idB035UtNgDrsOd3rdJifExq"},
-{"family": "decorative", "name": "wall lamp", "id": "1JDPuIS3livu9LqD5yUwdT7qCkWBUzGS8"},
-{"family": "decorative", "name": "outdoor lamp", "id": "1ciUG7btHHH9pHjdd4uxYfWebNnjgkRpI"},
     # ============ OEM PRODUCTS ============

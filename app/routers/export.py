@@ -73,11 +73,17 @@ def get_image_url_for_sku(sku, product_name="", db=None):
             # For automation entries — detect by SKU prefix TB/MT/MQ
             is_automation_sku = str(sku or "").upper().startswith(("TB", "MT", "MQ"))
             is_oem_sku = str(sku or "").upper().startswith("OEM")
+            is_dec_sku = str(sku or "").upper().startswith("DEC")
             if family == "automation":
                 if not is_automation_sku:
                     continue
-            if family == "oem":
+            elif family == "oem":
                 if not is_oem_sku:
+                    continue
+                if entry_name and entry_name in name:
+                    score += 3
+            elif family == "decorative":
+                if not is_dec_sku:
                     continue
                 if entry_name and entry_name in name:
                     score += 3
