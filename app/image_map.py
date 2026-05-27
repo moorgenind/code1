@@ -346,7 +346,6 @@ IMAGE_MAP = [
     {"family": "oem", "name": "under staircase profile", "id": "1kjWEx0mOy-ufshfG65NCoVVGhgiT4TZK"},
     {"family": "oem", "name": "wall grazer profile", "id": "1-T6xP80vnXyxE75eb99FD_o43_-ZyNU6"},
     {"family": "oem", "name": "wall washer", "id": "1eBIyi3wnHH3H1f6bLhZwNutTvTJI_l4i"},
-,
     {"family": "decorative", "name": "rechargeable table lamp", "id": "1jbP9LQvRC2Um7WUWWe_PnUfChE7L6TT3"},
     {"family": "decorative", "name": "table lamp", "id": "1TVAT9oyQV7PuRNP-E_4UCaUJFCFgBt_l"},
     {"family": "decorative", "name": "floor lamp", "id": "1Jn6TiDfWouCpXipT_sPzfbhyWpqsO0Z-"},
