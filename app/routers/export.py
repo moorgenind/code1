@@ -96,6 +96,14 @@ def get_image_url_for_sku(sku, product_name="", db=None):
                 best = entry
 
         if best and best_score >= 3:
+            try:
+                drive = get_drive()
+                file_meta = drive.files().get(fileId=best['id'], fields='webContentLink').execute()
+                direct_url = file_meta.get('webContentLink', '')
+                if direct_url:
+                    return direct_url
+            except Exception:
+                pass
             return 'https://drive.google.com/thumbnail?id=' + best['id'] + '&sz=w400'
     except Exception as e:
         print(f"Image lookup error: {e}")
