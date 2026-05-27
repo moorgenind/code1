@@ -123,7 +123,7 @@ def get_image_url_for_sku(sku, product_name="", db=None):
                     return direct_url
             except Exception:
                 pass
-            return 'https://drive.google.com/uc?id=' + best['id'] + '&export=download'
+            return 'https://drive.google.com/uc?export=view&id=' + best['id']
     except Exception as e:
         print(f"Image lookup error: {e}")
     return None
