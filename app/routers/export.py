@@ -85,8 +85,21 @@ def get_image_url_for_sku(sku, product_name="", db=None):
             elif family == "decorative":
                 if not is_dec_sku:
                     continue
+                # Match by product_type from DB
+                if db:
+                    try:
+                        from app import models
+                        prod = db.query(models.Product).filter(models.Product.sku == sku).first()
+                        if prod and prod.product_type:
+                            ptype = prod.product_type.lower()
+                            if entry_name and entry_name in ptype:
+                                score += 3
+                            elif entry_name and ptype in entry_name:
+                                score += 3
+                    except Exception:
+                        pass
                 if entry_name and entry_name in name:
-                    score += 3
+                    score += 2
             else:
                 if family and family in name:
                     score += 2
