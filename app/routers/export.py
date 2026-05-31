@@ -220,27 +220,13 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
     grand_total = round(total + gst, 2)
 
     # Group by area
-    area_groups = {}
-    for item in items:
-        area = item.area or "Other"
-        area_groups[area] = area_groups.get(area, 0) + float(item.line_total or 0)
-
-    summary_values = [
-        ['=IMAGE("https://drive.google.com/uc?export=view&id=1eh_LL1RACtyrWeOtX0gb8H7pUaKlrD_k",4,60,250)', "", "", ""],
-        ["", "", "", ""],
-        ["Moorgen Lighting & Smart System", "", "", ""],
-        ["BOQ & Pricing Proposal", "", "", ""],
-        ["", "", "", ""],
-        [f"Project Name: {project_name}", "", "", ""],
-        [f"System Category: {category_label}", "", "", ""],
-        [f"Date: {today}", "", "", ""],
-        ["", "", "", ""],
-        ["No.", "Sub-item", "Total Price", "Remarks"],
-    ]
-
+    # Single row summary by BOQ category
+    category_label_map = {"architectural": "Architectural Lighting", "decorative": "Decorative Lighting", "automation": "Automation", "oem": "OEM Products", "smart_locks": "Smart Locks"}
+    cat_display = category_label_map.get(boq.category, boq.category.title() if boq.category else "Lighting")
+    total_amt = float(boq.total_amount or 0)
+    area_groups = {cat_display: total_amt}
     for i, (area, amt) in enumerate(area_groups.items(), 1):
         summary_values.append([i, area, f"₹{amt:,.2f}", ""])
-
     summary_values += [
         ["", "Total", f"₹{total:,.2f}", ""],
         ["", "18% GST", f"₹{gst:,.2f}", ""],
