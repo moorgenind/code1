@@ -12,15 +12,22 @@ router = APIRouter()
 MOORGEN_LOGO_URL = "https://drive.google.com/uc?export=download&id=1_logo_file_id"
 MOORGEN_LOGO_DRIVE_ID = "1HeXvo_bjGU6RooXz3aCWcxr8eoDsfaIR2"  # boq_images folder
 
-TERMS = [
-    "Prices valid for 15 days from date of quotation.",
-    "50% advance required to confirm the order; balance before dispatch.",
-    "Delivery: 45–60 working days from order confirmation.",
-    "Installation not included unless separately agreed in writing.",
-    "Drivers and control gear added after layouts are finalized.",
-    "Prices subject to change without notice.",
-    "No returns under any circumstances.",
-]
+def get_terms(category):
+    if category == 'decorative':
+        advance, delivery = "80%", "60-90"
+    elif category == 'automation':
+        advance, delivery = "60%", "45-90"
+    else:
+        advance, delivery = "60%", "45-60"
+    return [
+        "Prices valid for 15 days from date of quotation.",
+        f"{advance} advance required to confirm the order; balance before dispatch.",
+        f"Delivery: {delivery} working days from order confirmation.",
+        "Installation not included unless separately agreed in writing.",
+        "Drivers and control gear added after layouts are finalized.",
+        "Prices subject to change without notice.",
+        "No returns under any circumstances.",
+    ]
 
 def get_creds():
     token_b64 = os.getenv("GOOGLE_TOKEN_BASE64")
