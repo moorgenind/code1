@@ -147,7 +147,7 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
     spreadsheet = sheets.spreadsheets().create(body={
         "properties": {"title": title},
         "sheets": [
-            {"properties": {"sheetId": 0, "title": "BOQ", "index": 0}},
+            {"properties": {"sheetId": 0, "title": "BOQ", "index": 1}},
             {"properties": {"sheetId": 1, "title": "Proposal Summary", "index": 0}},
         ]
     }).execute()
