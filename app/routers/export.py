@@ -175,6 +175,25 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
     level_header_rows = []
     for idx, item in enumerate(sorted_items, 1):
         desc = item.notes or ""
+        is_oem = str(item.product_sku or "").upper().startswith("OEM")
+        brand = "OEM" if is_oem else "Moorgen"
+        # If no notes, try to get specs from DB
+        if not desc and db:
+            try:
+                from app import models as _models
+                prod = db.query(_models.Product).filter(_models.Product.sku == item.product_sku).first()
+                if prod:
+                    parts = []
+                    if prod.cct: parts.append(f"CCT: {prod.cct}")
+                    if prod.beam_angle: parts.append(f"Beam: {prod.beam_angle}")
+                    if prod.power: parts.append(f"Power: {prod.power}")
+                    if prod.body_color: parts.append(f"Color: {prod.body_color}")
+                    if prod.cutout_size: parts.append(f"Cutout: {prod.cutout_size}mm")
+                    if prod.specification: parts.append(prod.specification)
+                    if prod.material: parts.append(prod.material)
+                    desc = " | ".join(parts)
+            except Exception:
+                pass
         boq_values.append([
             idx,
             item.level or "",
@@ -182,7 +201,7 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
             item.product_sku or "",
             item.product_name or "",
             "",  # Image placeholder
-            "Moorgen",
+            brand,
             desc,
             "pcs",
             item.quantity or 0,
