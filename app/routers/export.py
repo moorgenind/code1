@@ -469,9 +469,9 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
             }},
             "fields": "userEnteredFormat"
         }},
-        # Summary header row
+        # Summary header row black fill A10:D10 only
         {"repeatCell": {
-            "range": {"sheetId": 1, "startRowIndex": 9, "endRowIndex": 10},
+            "range": {"sheetId": 1, "startRowIndex": 9, "endRowIndex": 10, "startColumnIndex": 0, "endColumnIndex": 4},
             "cell": {"userEnteredFormat": {
                 "backgroundColor": {"red": 0.13, "green": 0.13, "blue": 0.13},
                 "textFormat": {"bold": True, "foregroundColor": WHITE},
