@@ -383,16 +383,16 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
             "fields": "userEnteredFormat"
         }},
         {"repeatCell": {
+            "range": {"sheetId": 0, "startRowIndex": header_row, "endRowIndex": last_item_row + 2, "startColumnIndex": 0, "endColumnIndex": 12},
+            "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP", "textFormat": {"fontFamily": "Arial", "fontSize": 10}}},
+            "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,wrapStrategy,textFormat)"
+        }},
+        {"repeatCell": {
             "range": {"sheetId": 0, "startRowIndex": header_row, "endRowIndex": header_row + 1, "startColumnIndex": 0, "endColumnIndex": 12},
             "cell": {"userEnteredFormat": {"textFormat": {"fontFamily": "Arial", "fontSize": 10, "bold": True, "foregroundColor": {"red": 1, "green": 1, "blue": 1}}}},
             "fields": "userEnteredFormat.textFormat"
         }},
         # Center all data cells
-        {"repeatCell": {
-            "range": {"sheetId": 0, "startRowIndex": header_row, "endRowIndex": last_item_row + 2, "startColumnIndex": 0, "endColumnIndex": 12},
-            "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP", "textFormat": {"fontFamily": "Arial", "fontSize": 10}}},
-            "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,wrapStrategy,textFormat)"
-        }},
         # Description column left align
         {"repeatCell": {
             "range": {"sheetId": 0, "startRowIndex": header_row, "endRowIndex": last_item_row, "startColumnIndex": 7, "endColumnIndex": 8},
