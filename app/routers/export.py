@@ -157,53 +157,40 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
         ["S.No.", "Level", "Area", "Model No.", "Product Name", "Image", "Brand", "Description", "Unit", "Qty", "Unit Price (₹)", "Total Price (₹)"],  # Row 6 headers
     ]
 
-    # Line items grouped by level
+    # Line items sorted by floor level (no header rows)
     LEVEL_ORDER = ['basement','ground floor','ground','first floor','first','second floor','second','third floor','third','fourth floor','fourth','fifth floor','fifth','sixth floor','sixth','terrace','roof','top floor','penthouse']
-    def level_sort_key(l): 
+    def level_sort_key(l):
         try: return LEVEL_ORDER.index((l or '').lower())
         except: return 99
-    # Group items by level
     from collections import OrderedDict
     grouped = OrderedDict()
     for item in items:
         lvl = item.level or 'Unassigned'
         if lvl not in grouped: grouped[lvl] = []
         grouped[lvl].append(item)
-    # Sort by floor order
     sorted_levels = sorted(grouped.keys(), key=level_sort_key)
-    idx = 1
-    level_header_rows = []  # track which rows are level headers (0-indexed from header_row+1)
-    current_row = 0  # offset from first data row
+    sorted_items = []
     for level in sorted_levels:
-        level_items = grouped[level]
-        level_total = sum(float(i.line_total or 0) for i in level_items)
-        # Add level header row
+        sorted_items.extend(grouped[level])
+    level_header_rows = []
+    for idx, item in enumerate(sorted_items, 1):
+        desc = item.notes or ""
         boq_values.append([
-            "", level.upper(), "", "", "", "", "", "", "", "", "", ""
+            idx,
+            item.level or "",
+            item.area or "",
+            item.product_sku or "",
+            item.product_name or "",
+            "",  # Image placeholder
+            "Moorgen",
+            desc,
+            "pcs",
+            item.quantity or 0,
+            float(item.unit_price or 0),
+            float(item.line_total or 0),
         ])
-        level_header_rows.append(current_row)
-        current_row += 1
-        for item in level_items:
-            desc = item.notes or ""
-            boq_values.append([
-                idx,
-                item.level or "",
-                item.area or "",
-                item.product_sku or "",
-                item.product_name or "",
-                "",  # Image placeholder
-                "Moorgen",
-                desc,
-                "pcs",
-                item.quantity or 0,
-                float(item.unit_price or 0),
-                float(item.line_total or 0),
-            ])
-            idx += 1
-            current_row += 1
-
     # Grand total row
-    last_data_row = 6 + len(items) + len(sorted_levels)  # extra rows for level headers
+    last_data_row = 6 + len(items)
     boq_values.append(["", "", "", "", "", "", "", "", "", "", "Grand Total", f"=SUM(L7:L{last_data_row})"])
 
     # ── Summary Sheet Data ──────────────────────────────
