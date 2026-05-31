@@ -435,15 +435,15 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
             "cell": {"userEnteredFormat": {"textFormat": {"bold": True, "fontSize": 12}}},
             "fields": "userEnteredFormat"
         }},
-        # Summary table box border A10:D14 (0-indexed rows 9-13, cols 0-3)
+        # Summary table box border A10:D14
         {"updateBorders": {
             "range": {"sheetId": 1, "startRowIndex": 9, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 4},
-            "top": {"style": "SOLID_MEDIUM", "color": {"red": 0.13, "green": 0.13, "blue": 0.13}},
-            "bottom": {"style": "SOLID_MEDIUM", "color": {"red": 0.13, "green": 0.13, "blue": 0.13}},
-            "left": {"style": "SOLID_MEDIUM", "color": {"red": 0.13, "green": 0.13, "blue": 0.13}},
-            "right": {"style": "SOLID_MEDIUM", "color": {"red": 0.13, "green": 0.13, "blue": 0.13}},
-            "innerHorizontal": {"style": "SOLID", "color": {"red": 0.8, "green": 0.8, "blue": 0.8}},
-            "innerVertical": {"style": "SOLID", "color": {"red": 0.8, "green": 0.8, "blue": 0.8}}
+            "top": {"style": "SOLID_MEDIUM", "color": {"red": 0, "green": 0, "blue": 0}},
+            "bottom": {"style": "SOLID_MEDIUM", "color": {"red": 0, "green": 0, "blue": 0}},
+            "left": {"style": "SOLID_MEDIUM", "color": {"red": 0, "green": 0, "blue": 0}},
+            "right": {"style": "SOLID_MEDIUM", "color": {"red": 0, "green": 0, "blue": 0}},
+            "innerHorizontal": {"style": "SOLID", "color": {"red": 0.6, "green": 0.6, "blue": 0.6}},
+            "innerVertical": {"style": "SOLID", "color": {"red": 0.6, "green": 0.6, "blue": 0.6}}
         }},
         # Summary header row black fill A10:D10 only
         {"repeatCell": {
