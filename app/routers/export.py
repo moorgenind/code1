@@ -512,27 +512,16 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
 
     # ── Insert product images via IMAGE formula ─────────
     # Build a map of item -> actual row number accounting for level headers
-    # Must use same sort order as boq_values (grouped by sorted_levels)
-    sorted_items = []
-    for level in sorted_levels:
-        sorted_items.extend(grouped[level])
+    # Insert images in sequential row order
     image_updates = []
-    row_offset = 0
-    prev_level = None
-    for item in sorted_items:
-        curr_level = item.level or 'Unassigned'
-        if curr_level != prev_level:
-            row_offset += 1  # account for level header row
-            prev_level = curr_level
-        row_num = header_row + 1 + row_offset  # 1-indexed for A1 notation
-        row_offset += 1
+    for i, item in enumerate(sorted_items):
+        row_num = header_row + 2 + i  # 1-indexed
         img_url = get_image_url_for_sku(item.product_sku, item.product_name or '', db=db)
         if img_url:
             image_updates.append({
                 "range": f"BOQ!F{row_num}",
                 "values": [[f'=IMAGE("{img_url}")']],
             })
-
     if image_updates:
         sheets.spreadsheets().values().batchUpdate(
             spreadsheetId=ss_id,
