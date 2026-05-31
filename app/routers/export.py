@@ -480,16 +480,8 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
         }},
         # Grand total bold
         {"repeatCell": {
-            "range": {"sheetId": 1, "startRowIndex": 9 + len(area_groups) + 2, "endRowIndex": 9 + len(area_groups) + 3},
-            "cell": {"userEnteredFormat": {"textFormat": {"bold": True, "fontSize": 11}}},
-            "fields": "userEnteredFormat"
-        }},
         # Terms bold header
         {"repeatCell": {
-            "range": {"sheetId": 1, "startRowIndex": 9 + len(area_groups) + 4, "endRowIndex": 9 + len(area_groups) + 5},
-            "cell": {"userEnteredFormat": {"textFormat": {"bold": True}}},
-            "fields": "userEnteredFormat"
-        }},
         # Summary col widths
         {"updateDimensionProperties": {
             "range": {"sheetId": 1, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 1},
