@@ -179,7 +179,7 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
         level_total = sum(float(i.line_total or 0) for i in level_items)
         # Add level header row
         boq_values.append([
-            "", level.upper(), "", "", "", "", "", "", "", len(level_items), "", level_total
+            "", level.upper(), "", "", "", "", "", "", "", "", "", ""
         ])
         level_header_rows.append(current_row)
         current_row += 1
