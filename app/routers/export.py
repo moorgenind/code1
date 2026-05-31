@@ -441,7 +441,7 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
         }},
         # Summary table box border A10:E14
         {"updateBorders": {
-            "range": {"sheetId": 1, "startRowIndex": 9, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 5},
+            "range": {"sheetId": 1, "startRowIndex": 9, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 4},
             "top": {"style": "SOLID_MEDIUM", "color": {"red": 0, "green": 0, "blue": 0}},
             "bottom": {"style": "SOLID_MEDIUM", "color": {"red": 0, "green": 0, "blue": 0}},
             "left": {"style": "SOLID_MEDIUM", "color": {"red": 0, "green": 0, "blue": 0}},
@@ -451,7 +451,7 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
         }},
         # Summary header row black fill A10:D10 only
         {"repeatCell": {
-            "range": {"sheetId": 1, "startRowIndex": 9, "endRowIndex": 10, "startColumnIndex": 0, "endColumnIndex": 5},
+            "range": {"sheetId": 1, "startRowIndex": 9, "endRowIndex": 10, "startColumnIndex": 0, "endColumnIndex": 4},
             "cell": {"userEnteredFormat": {
                 "backgroundColor": {"red": 0.13, "green": 0.13, "blue": 0.13},
                 "textFormat": {"bold": True, "foregroundColor": {"red": 1, "green": 1, "blue": 1}, "fontFamily": "Arial", "fontSize": 10},
@@ -461,7 +461,7 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
         }},
         # Summary data rows white background A11:D14
         {"repeatCell": {
-            "range": {"sheetId": 1, "startRowIndex": 10, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 5},
+            "range": {"sheetId": 1, "startRowIndex": 10, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 4},
             "cell": {"userEnteredFormat": {
                 "backgroundColor": {"red": 1, "green": 1, "blue": 1},
                 "textFormat": {"fontFamily": "Arial", "fontSize": 10},
