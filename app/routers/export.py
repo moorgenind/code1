@@ -191,9 +191,11 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
                     if prod.cutout_size: parts.append(f"Cutout: {prod.cutout_size}mm")
                     if prod.specification: parts.append(prod.specification)
                     if prod.material: parts.append(prod.material)
-                    desc = " | ".join(parts)
+                    desc = " | ".join(parts) if parts else (prod.name or "")
             except Exception:
                 pass
+        if not desc:
+            desc = item.product_name or ""
         boq_values.append([
             idx,
             item.level or "",
