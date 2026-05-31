@@ -437,9 +437,43 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
         {"repeatCell": {
             "range": {"sheetId": 1, "startRowIndex": 2, "endRowIndex": 4},
             "cell": {"userEnteredFormat": {"textFormat": {"bold": True, "fontSize": 12}}},
-            "fields": "userEnteredFormat"
+            "fields": "userEnteredFormat.textFormat"
         }},
-        # Summary table box border A10:E14
+        # Summary data rows center align (all rows first)
+        {"repeatCell": {
+            "range": {"sheetId": 1, "startRowIndex": 9, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 4},
+            "cell": {"userEnteredFormat": {
+                "textFormat": {"fontFamily": "Arial", "fontSize": 10},
+                "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"
+            }},
+            "fields": "userEnteredFormat(textFormat,horizontalAlignment,verticalAlignment)"
+        }},
+        # Grand total row bold
+        {"repeatCell": {
+            "range": {"sheetId": 1, "startRowIndex": 13, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 4},
+            "cell": {"userEnteredFormat": {
+                "textFormat": {"bold": True, "fontFamily": "Arial", "fontSize": 10},
+                "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"
+            }},
+            "fields": "userEnteredFormat(textFormat,horizontalAlignment,verticalAlignment)"
+        }},
+        # Terms & Conditions bold
+        {"repeatCell": {
+            "range": {"sheetId": 1, "startRowIndex": 15, "endRowIndex": 16, "startColumnIndex": 0, "endColumnIndex": 4},
+            "cell": {"userEnteredFormat": {"textFormat": {"bold": True, "fontFamily": "Arial", "fontSize": 10}}},
+            "fields": "userEnteredFormat.textFormat"
+        }},
+        # Header row black fill - specific fields only (not overwriting borders)
+        {"repeatCell": {
+            "range": {"sheetId": 1, "startRowIndex": 9, "endRowIndex": 10, "startColumnIndex": 0, "endColumnIndex": 4},
+            "cell": {"userEnteredFormat": {
+                "backgroundColor": {"red": 0, "green": 0, "blue": 0},
+                "textFormat": {"bold": True, "foregroundColor": {"red": 1, "green": 1, "blue": 1}, "fontFamily": "Arial", "fontSize": 10},
+                "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"
+            }},
+            "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)"
+        }},
+        # Border LAST so repeatCell doesn't overwrite it
         {"updateBorders": {
             "range": {"sheetId": 1, "startRowIndex": 9, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 4},
             "top": {"style": "SOLID_MEDIUM", "color": {"red": 0, "green": 0, "blue": 0}},
@@ -449,35 +483,7 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
             "innerHorizontal": {"style": "SOLID", "color": {"red": 0.6, "green": 0.6, "blue": 0.6}},
             "innerVertical": {"style": "SOLID", "color": {"red": 0.6, "green": 0.6, "blue": 0.6}}
         }},
-        # Summary header row black fill A10:D10 only
-        {"repeatCell": {
-            "range": {"sheetId": 1, "startRowIndex": 9, "endRowIndex": 10, "startColumnIndex": 0, "endColumnIndex": 4},
-            "cell": {"userEnteredFormat": {
-                "backgroundColor": {"red": 0.13, "green": 0.13, "blue": 0.13},
-                "textFormat": {"bold": True, "foregroundColor": {"red": 1, "green": 1, "blue": 1}, "fontFamily": "Arial", "fontSize": 10},
-                "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"
-            }},
-            "fields": "userEnteredFormat"
-        }},
-        # Summary data rows white background A11:D14
-        {"repeatCell": {
-            "range": {"sheetId": 1, "startRowIndex": 10, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 4},
-            "cell": {"userEnteredFormat": {
-                "backgroundColor": {"red": 1, "green": 1, "blue": 1},
-                "textFormat": {"fontFamily": "Arial", "fontSize": 10},
-                "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"
-            }},
-            "fields": "userEnteredFormat"
-        }},
-        # Summary header row black fill A10:D10 only
-        {"repeatCell": {
-            "range": {"sheetId": 1, "startRowIndex": 9, "endRowIndex": 10, "startColumnIndex": 0, "endColumnIndex": 4},
-            "cell": {"userEnteredFormat": {
-                "backgroundColor": {"red": 0.13, "green": 0.13, "blue": 0.13},
-                "textFormat": {"bold": True, "foregroundColor": WHITE},
-            }},
-            "fields": "userEnteredFormat"
-        }},
+        # Summary col widths
         # Summary col widths
         {"updateDimensionProperties": {
             "range": {"sheetId": 1, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 1},
