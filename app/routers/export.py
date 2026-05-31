@@ -224,30 +224,34 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
     category_label_map = {"architectural": "Architectural Lighting", "decorative": "Decorative Lighting", "automation": "Automation", "oem": "OEM Products", "smart_locks": "Smart Locks"}
     cat_display = category_label_map.get(boq.category, boq.category.title() if boq.category else "Lighting")
     total_amt = float(boq.total_amount or 0)
+    category_label_map2 = {"architectural": "Architectural", "decorative": "Decorative", "automation": "Automation", "oem": "OEM", "smart_locks": "Smart Locks"}
+    cat_display2 = category_label_map2.get(boq.category, boq.category.title() if boq.category else "Lighting")
+    from datetime import date as _date
+    today_long = _date.today().strftime("%B %-d, %Y")
     summary_values = [
-        ["=IMAGE(\"https://drive.google.com/uc?export=view&id=1eh_LL1RACtyrWeOtX0gb8H7pUaKlrD_k\",4,60,250)", "", "", ""],
-        ["", "", "", ""],
-        ["BOQ & Pricing Proposal", "", "", ""],
-        [f"Project: {project_name}", "", f"Date: {today}", ""],
-        ["", "", "", ""],
-        ["", "", "", ""],
-        ["", "", "", ""],
-        ["", "", "", ""],
-        ["", "", "", ""],
-        ["No.", "Sub-item", "Total Price", "Remarks"],
+        ["=IMAGE(\"https://drive.google.com/uc?export=view&id=1eh_LL1RACtyrWeOtX0gb8H7pUaKlrD_k\",4,60,250)", "", "", "", ""],
+        ["", "", "", "", ""],
+        ["Moorgen Lighting & Smart System", "", "", "", ""],
+        ["BOQ & Pricing Proposal", "", "", "", ""],
+        ["", "", "", "", ""],
+        [f"Project Name: {project_name}", "", "", "", ""],
+        [f"System Category: {cat_display2}", "", "", "", ""],
+        [f"Date: {today_long}", "", "", "", ""],
+        ["", "", "", "", ""],
+        ["No.", "Sub-Item", "Total Price", "Remarks", ""],
     ]
     area_groups = {cat_display: total_amt}
     for i, (area, amt) in enumerate(area_groups.items(), 1):
-        summary_values.append([i, area, f"₹{amt:,.2f}", ""])
+        summary_values.append([i, area, f"₹{amt:,.2f}", "", ""])
     summary_values += [
-        ["", "Total", f"₹{total:,.2f}", ""],
-        ["", "18% GST", f"₹{gst:,.2f}", ""],
-        ["", "Grand Total", f"₹{grand_total:,.2f}", ""],
-        ["", "", "", ""],
-        ["Terms & Conditions", "", "", ""],
+        ["", "Total", f"₹{total:,.2f}", "", ""],
+        ["", "18% GST", f"₹{gst:,.2f}", "", ""],
+        ["", "Grand Total", f"₹{grand_total:,.2f}", "", ""],
+        ["", "", "", "", ""],
+        ["Terms & Conditions", "", "", "", ""],
     ]
     for term in TERMS:
-        summary_values.append([f"- {term}", "", "", ""])
+        summary_values.append([f"- {term}", "", "", "", ""])
 
     # ── Write data ──────────────────────────────────────
     sheets.spreadsheets().values().batchUpdate(
@@ -435,9 +439,9 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
             "cell": {"userEnteredFormat": {"textFormat": {"bold": True, "fontSize": 12}}},
             "fields": "userEnteredFormat"
         }},
-        # Summary table box border A10:D14
+        # Summary table box border A10:E14
         {"updateBorders": {
-            "range": {"sheetId": 1, "startRowIndex": 9, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 4},
+            "range": {"sheetId": 1, "startRowIndex": 9, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 5},
             "top": {"style": "SOLID_MEDIUM", "color": {"red": 0, "green": 0, "blue": 0}},
             "bottom": {"style": "SOLID_MEDIUM", "color": {"red": 0, "green": 0, "blue": 0}},
             "left": {"style": "SOLID_MEDIUM", "color": {"red": 0, "green": 0, "blue": 0}},
@@ -447,7 +451,7 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
         }},
         # Summary header row black fill A10:D10 only
         {"repeatCell": {
-            "range": {"sheetId": 1, "startRowIndex": 9, "endRowIndex": 10, "startColumnIndex": 0, "endColumnIndex": 4},
+            "range": {"sheetId": 1, "startRowIndex": 9, "endRowIndex": 10, "startColumnIndex": 0, "endColumnIndex": 5},
             "cell": {"userEnteredFormat": {
                 "backgroundColor": {"red": 0.13, "green": 0.13, "blue": 0.13},
                 "textFormat": {"bold": True, "foregroundColor": {"red": 1, "green": 1, "blue": 1}, "fontFamily": "Arial", "fontSize": 10},
@@ -457,7 +461,7 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
         }},
         # Summary data rows white background A11:D14
         {"repeatCell": {
-            "range": {"sheetId": 1, "startRowIndex": 10, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 4},
+            "range": {"sheetId": 1, "startRowIndex": 10, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 5},
             "cell": {"userEnteredFormat": {
                 "backgroundColor": {"red": 1, "green": 1, "blue": 1},
                 "textFormat": {"fontFamily": "Arial", "fontSize": 10},
