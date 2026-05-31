@@ -250,6 +250,7 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
         ["", "", "", "", ""],
         ["Terms & Conditions", "", "", "", ""],
     ]
+    TERMS = get_terms(boq.category)
     for term in TERMS:
         summary_values.append([f"- {term}", "", "", "", ""])
 
