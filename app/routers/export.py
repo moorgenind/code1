@@ -524,9 +524,17 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
     ).execute()
 
     # ── Insert product images via IMAGE formula ─────────
+    # Build a map of item -> actual row number accounting for level headers
     image_updates = []
-    for idx, item in enumerate(items):
-        row_num = header_row + 2 + idx  # 1-indexed for A1 notation
+    row_offset = 0
+    prev_level = None
+    for item in items:
+        curr_level = item.level or 'Unassigned'
+        if curr_level != prev_level:
+            row_offset += 1  # account for level header row
+            prev_level = curr_level
+        row_num = header_row + 1 + row_offset  # 1-indexed for A1 notation
+        row_offset += 1
         img_url = get_image_url_for_sku(item.product_sku, item.product_name or '', db=db)
         if img_url:
             image_updates.append({
