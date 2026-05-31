@@ -478,10 +478,6 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
             }},
             "fields": "userEnteredFormat"
         }},
-        # Grand total bold
-        {"repeatCell": {
-        # Terms bold header
-        {"repeatCell": {
         # Summary col widths
         {"updateDimensionProperties": {
             "range": {"sheetId": 1, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 1},
