@@ -157,26 +157,53 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
         ["S.No.", "Level", "Area", "Model No.", "Product Name", "Image", "Brand", "Description", "Unit", "Qty", "Unit Price (₹)", "Total Price (₹)"],  # Row 6 headers
     ]
 
-    # Line items starting at row 7
-    for idx, item in enumerate(items, 1):
-        desc = item.notes or ""
+    # Line items grouped by level
+    LEVEL_ORDER = ['basement','ground floor','ground','first floor','first','second floor','second','third floor','third','fourth floor','fourth','fifth floor','fifth','sixth floor','sixth','terrace','roof','top floor','penthouse']
+    def level_sort_key(l): 
+        try: return LEVEL_ORDER.index((l or '').lower())
+        except: return 99
+    # Group items by level
+    from collections import OrderedDict
+    grouped = OrderedDict()
+    for item in items:
+        lvl = item.level or 'Unassigned'
+        if lvl not in grouped: grouped[lvl] = []
+        grouped[lvl].append(item)
+    # Sort by floor order
+    sorted_levels = sorted(grouped.keys(), key=level_sort_key)
+    idx = 1
+    level_header_rows = []  # track which rows are level headers (0-indexed from header_row+1)
+    current_row = 0  # offset from first data row
+    for level in sorted_levels:
+        level_items = grouped[level]
+        level_total = sum(float(i.line_total or 0) for i in level_items)
+        # Add level header row
         boq_values.append([
-            idx,
-            item.level or "",
-            item.area or "",
-            item.product_sku or "",
-            item.product_name or "",
-            "",  # Image - placeholder
-            "Moorgen",
-            desc,
-            "pcs",
-            item.quantity or 0,
-            float(item.unit_price or 0),
-            float(item.line_total or 0),
+            "", level.upper(), "", "", "", "", "", "", "", len(level_items), "", level_total
         ])
+        level_header_rows.append(current_row)
+        current_row += 1
+        for item in level_items:
+            desc = item.notes or ""
+            boq_values.append([
+                idx,
+                item.level or "",
+                item.area or "",
+                item.product_sku or "",
+                item.product_name or "",
+                "",  # Image placeholder
+                "Moorgen",
+                desc,
+                "pcs",
+                item.quantity or 0,
+                float(item.unit_price or 0),
+                float(item.line_total or 0),
+            ])
+            idx += 1
+            current_row += 1
 
     # Grand total row
-    last_data_row = 6 + len(items)
+    last_data_row = 6 + len(items) + len(sorted_levels)  # extra rows for level headers
     boq_values.append(["", "", "", "", "", "", "", "", "", "", "Grand Total", f"=SUM(L7:L{last_data_row})"])
 
     # ── Summary Sheet Data ──────────────────────────────
@@ -512,6 +539,25 @@ def export_boq_to_sheets(boq_id: int, db: Session = Depends(get_db)):
             spreadsheetId=ss_id,
             body={"valueInputOption": "USER_ENTERED", "data": image_updates}
         ).execute()
+
+    # ── Format level header rows ─────────────────────────
+    if level_header_rows:
+        format_reqs = []
+        for offset in level_header_rows:
+            row_idx = header_row + 1 + offset
+            format_reqs.append({
+                "repeatCell": {
+                    "range": {"sheetId": 0, "startRowIndex": row_idx, "endRowIndex": row_idx + 1, "startColumnIndex": 0, "endColumnIndex": 12},
+                    "cell": {"userEnteredFormat": {
+                        "backgroundColor": {"red": 0.1, "green": 0.1, "blue": 0.1},
+                        "textFormat": {"bold": True, "foregroundColor": {"red": 0.78, "green": 0.66, "blue": 0.43}},
+                        "borders": {"top": {"style": "SOLID_MEDIUM", "color": {"red": 0.78, "green": 0.66, "blue": 0.43}}, "bottom": {"style": "SOLID", "color": {"red": 0.3, "green": 0.3, "blue": 0.3}}}
+                    }},
+                    "fields": "userEnteredFormat(backgroundColor,textFormat,borders)"
+                }
+            })
+        if format_reqs:
+            sheets.spreadsheets().batchUpdate(spreadsheetId=ss_id, body={"requests": format_reqs}).execute()
 
     # ── Move to project Drive folder ────────────────────
     if lead.drive_folder_url:
