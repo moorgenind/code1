@@ -49,9 +49,13 @@ def dealer_login(body: dict, db: Session = Depends(get_db)):
     ).first()
     if not dealer or dealer.password_hash != sha256(password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    token = secrets.token_urlsafe(32)
-    dealer.portal_token = token
-    db.commit()
+    # Reuse existing token if valid, otherwise generate new one
+    if not dealer.portal_token:
+        token = secrets.token_urlsafe(32)
+        dealer.portal_token = token
+        db.commit()
+    else:
+        token = dealer.portal_token
     return {
         "token": token,
         "dealer_id": dealer.dealer_id,
