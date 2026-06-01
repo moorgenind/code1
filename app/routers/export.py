@@ -665,6 +665,40 @@ DEALERS = {
     },
 }
 
+
+@router.post("/dealer/boq/{boq_id}/sheets")
+def export_dealer_boq_to_sheets(boq_id: int, token: str, db: Session = Depends(get_db)):
+    from app.routers.dealer_auth import get_dealer
+    dealer = get_dealer(token, db)
+    drive = get_drive()
+    DEALERS_ROOT_NAME = "Moorgen Dealers BOQs"
+    res = drive.files().list(
+        q=f"name='{DEALERS_ROOT_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false",
+        fields="files(id,name)"
+    ).execute()
+    if res['files']:
+        root_id = res['files'][0]['id']
+    else:
+        f = drive.files().create(body={"name": DEALERS_ROOT_NAME, "mimeType": "application/vnd.google-apps.folder"}, fields="id").execute()
+        root_id = f['id']
+    dealer_folder_name = f"{dealer.firm_name} - {dealer.city}"
+    res2 = drive.files().list(
+        q=f"name='{dealer_folder_name}' and mimeType='application/vnd.google-apps.folder' and '{root_id}' in parents and trashed=false",
+        fields="files(id,name)"
+    ).execute()
+    if res2['files']:
+        dealer_folder_id = res2['files'][0]['id']
+    else:
+        f2 = drive.files().create(body={"name": dealer_folder_name, "mimeType": "application/vnd.google-apps.folder", "parents": [root_id]}, fields="id").execute()
+        dealer_folder_id = f2['id']
+        drive.permissions().create(fileId=dealer_folder_id, body={"role": "reader", "type": "anyone"}).execute()
+    result = export_boq_to_sheets(boq_id, db)
+    ss_id = result['spreadsheet_id']
+    drive.files().update(fileId=ss_id, addParents=dealer_folder_id, removeParents='root', supportsAllDrives=True, fields='id').execute()
+    drive.permissions().create(fileId=ss_id, body={"role": "reader", "type": "anyone"}).execute()
+    folder_url = f"https://drive.google.com/drive/folders/{dealer_folder_id}"
+    return {"sheet_url": result['sheet_url'], "folder_url": folder_url}
+
 @router.post("/invoice/{invoice_id}/sheets")
 def export_invoice_to_sheets(invoice_id: int, dealer_key: str = "", db: Session = Depends(get_db)):
     from app import models as m
