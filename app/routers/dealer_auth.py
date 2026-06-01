@@ -225,3 +225,36 @@ def check_lock(body: dict, db: Session = Depends(get_db)):
     return check_project_lock(db, body.get("city",""), body.get("client_name",""), body.get("project_name",""), dealer.dealer_id)
 
 @router.get("/products")
+
+def get_dealer_products(token: str, category: str = "", db: Session = Depends(get_db)):
+    dealer = get_dealer(token, db)
+    disc = float(dealer.special_discount_pct or 50)
+    q = db.query(models.Product).filter(models.Product.is_active == True)
+    if category:
+        q = q.filter(models.Product.category == category)
+    products = q.order_by(models.Product.name).all()
+    result = []
+    for p in products:
+        mrp = float(p.mrp_inr or p.unit_price or 0)
+        dealer_price = round(mrp * (1 - disc/100), 2)
+        result.append({
+            "product_id": p.product_id,
+            "sku": p.sku,
+            "name": p.name,
+            "category": p.category,
+            "family": p.family,
+            "product_type": p.product_type,
+            "trim": p.trim,
+            "cct": p.cct,
+            "beam_angle": p.beam_angle,
+            "power": p.power,
+            "body_color": p.body_color,
+            "cup_color": p.cup_color,
+            "cutout_size": p.cutout_size,
+            "mrp": mrp,
+            "dealer_price": dealer_price,
+            "discount_pct": disc,
+            "unit": "pcs",
+            "image_url": get_image_url_for_sku(p.sku, p.name or ''),
+        })
+    return result
