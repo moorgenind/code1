@@ -193,7 +193,7 @@ def get_dealer_products(token: str, category: str = "", db: Session = Depends(ge
             "dealer_price": dealer_price,
             "discount_pct": disc,
             "unit": "pcs",
-            "image_url": get_image_url_for_sku(p.sku, p.name or ''),
+            "image_url": None,
         })
     return result
 
@@ -249,7 +249,7 @@ def get_dealer_products(token: str, category: str = "", db: Session = Depends(ge
             "dealer_price": dealer_price,
             "discount_pct": disc,
             "unit": "pcs",
-            "image_url": get_image_url_for_sku(p.sku, p.name or ''),
+            "image_url": None,
         })
     return result
 
