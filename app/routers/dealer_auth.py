@@ -162,13 +162,6 @@ def create_dealer_lead(body: dict, db: Session = Depends(get_db)):
     db.refresh(lead)
     return {"lead_id": lead.lead_id, "lead_code": lead.lead_code, "message": "Lead created and locked for 6 months"}
 
-@router.post("/check-lock")
-def check_lock(body: dict, db: Session = Depends(get_db)):
-    token = body.get("token")
-    dealer = get_dealer(token, db)
-    return check_project_lock(db, body.get("city",""), body.get("client_name",""), body.get("project_name",""), dealer.dealer_id)
-
-@router.get("/products")
 @router.patch("/leads/{lead_id}/status")
 def update_lead_status(lead_id: int, body: dict = Body(...), db: Session = Depends(get_db)):
     dealer = get_dealer(body.get("token", ""), db)
@@ -224,3 +217,10 @@ def get_dealer_products(token: str, category: str = "", db: Session = Depends(ge
             "image_url": get_image_url_for_sku(p.sku, p.name or ''),
         })
     return result
+@router.post("/check-lock")
+def check_lock(body: dict, db: Session = Depends(get_db)):
+    token = body.get("token")
+    dealer = get_dealer(token, db)
+    return check_project_lock(db, body.get("city",""), body.get("client_name",""), body.get("project_name",""), dealer.dealer_id)
+
+@router.get("/products")
