@@ -259,3 +259,4 @@ def check_lock(body: dict, db: Session = Depends(get_db)):
     dealer = get_dealer(token, db)
     return check_project_lock(db, body.get("city",""), body.get("client_name",""), body.get("project_name",""), dealer.dealer_id)
 
+// force redeploy Mon Jun  1 15:05:01 IST 2026
