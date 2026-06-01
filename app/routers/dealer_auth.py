@@ -169,6 +169,26 @@ def check_lock(body: dict, db: Session = Depends(get_db)):
     return check_project_lock(db, body.get("city",""), body.get("client_name",""), body.get("project_name",""), dealer.dealer_id)
 
 @router.get("/products")
+@router.patch("/leads/{lead_id}/status")
+def update_lead_status(lead_id: int, body: dict = Body(...), db: Session = Depends(get_db)):
+    dealer = get_dealer(body.get("token", ""), db)
+    lead = db.query(models.Lead).filter(models.Lead.lead_id == lead_id, models.Lead.dealer_id == dealer.dealer_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    lead.status = body.get("status", lead.status)
+    db.commit()
+    return {"ok": True}
+
+@router.patch("/leads/{lead_id}/notes")
+def update_lead_notes(lead_id: int, body: dict = Body(...), db: Session = Depends(get_db)):
+    dealer = get_dealer(body.get("token", ""), db)
+    lead = db.query(models.Lead).filter(models.Lead.lead_id == lead_id, models.Lead.dealer_id == dealer.dealer_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    lead.dealer_notes = body.get("notes", lead.dealer_notes)
+    db.commit()
+    return {"ok": True}
+
 def get_dealer_products(token: str, category: str = "", db: Session = Depends(get_db)):
     dealer = get_dealer(token, db)
     disc = dealer.special_discount_pct or 50.0
