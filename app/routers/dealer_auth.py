@@ -217,6 +217,7 @@ def get_dealer_products(token: str, category: str = "", db: Session = Depends(ge
             "image_url": get_image_url_for_sku(p.sku, p.name or ''),
         })
     return result
+
 @router.post("/check-lock")
 def check_lock(body: dict, db: Session = Depends(get_db)):
     token = body.get("token")
