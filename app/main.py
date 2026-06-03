@@ -19,6 +19,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/ping")
+def ping(): return {"pong": True}
+
 @app.get("/")
 def root():
     return {"message": "Morgan Innovations backend is running"}
