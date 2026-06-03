@@ -41,9 +41,21 @@ class PaymentCreate(BaseModel):
     notes: Optional[str] = None
 
 def generate_invoice_code(db: Session, entity: str = "MIPL") -> str:
+    from sqlalchemy import func
     prefix = "INV" if entity == "MIPL" else "LF"
-    count = db.query(models.Invoice).filter(models.Invoice.invoice_from == entity).count()
-    return f"{prefix}-2627-{str(count + 1).zfill(3)}"
+    fy = "2627"
+    pattern = f"{prefix}-{fy}-%"
+    last = db.query(func.max(models.Invoice.invoice_code)).filter(
+        models.Invoice.invoice_code.like(pattern)
+    ).scalar()
+    if last:
+        try:
+            num = int(last.split("-")[-1]) + 1
+        except:
+            num = 1
+    else:
+        num = 1
+    return f"{prefix}-{fy}-{str(num).zfill(3)}"
 
 def build_invoice_summary(inv, lead):
     paid = sum(float(p.amount) for p in inv.payments)
