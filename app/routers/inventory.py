@@ -229,3 +229,84 @@ def adjust_stock(payload: StockAdjust, db: Session = Depends(get_db)):
         db.add(stock)
     db.commit()
     return {"success": True}
+
+# ── Stock Assignments ─────────────────────────────────
+class StockAssignmentCreate(BaseModel):
+    sku: str
+    lead_id: int
+    quantity_assigned: int
+    notes: Optional[str] = None
+
+@router.get("/stock/assignments")
+def get_stock_assignments(db: Session = Depends(get_db)):
+    from sqlalchemy import text
+    rows = db.execute(text("""
+        SELECT sa.id, sa.sku, sa.lead_id, sa.quantity_assigned, sa.quantity_dispatched,
+               sa.status, sa.notes, sa.created_at, sa.dispatched_at,
+               l.client_name, l.project_name, l.lead_code,
+               s.product_name
+        FROM stock_assignments sa
+        LEFT JOIN leads l ON l.lead_id = sa.lead_id
+        LEFT JOIN stock s ON s.sku = sa.sku
+        ORDER BY sa.created_at DESC
+    """)).fetchall()
+    return [dict(r._mapping) for r in rows]
+
+@router.post("/stock/assign")
+def assign_stock(payload: StockAssignmentCreate, db: Session = Depends(get_db)):
+    # Check available stock
+    stock = db.query(models.Stock).filter(models.Stock.sku == payload.sku).first()
+    if not stock:
+        raise HTTPException(status_code=404, detail="SKU not found in stock")
+    available = stock.quantity_on_hand - stock.quantity_reserved
+    if payload.quantity_assigned > available:
+        raise HTTPException(status_code=400, detail=f"Only {available} units available")
+    # Create assignment
+    from sqlalchemy import text
+    db.execute(text("""
+        INSERT INTO stock_assignments (sku, lead_id, quantity_assigned, notes, status)
+        VALUES (:sku, :lead_id, :qty, :notes, 'reserved')
+    """), {"sku": payload.sku, "lead_id": payload.lead_id, "qty": payload.quantity_assigned, "notes": payload.notes})
+    # Update reserved count
+    stock.quantity_reserved += payload.quantity_assigned
+    stock.updated_at = datetime.utcnow()
+    db.commit()
+    return {"success": True}
+
+@router.patch("/stock/assignments/{assignment_id}/dispatch")
+def dispatch_assignment(assignment_id: int, db: Session = Depends(get_db)):
+    from sqlalchemy import text
+    row = db.execute(text("SELECT * FROM stock_assignments WHERE id = :id"), {"id": assignment_id}).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    if row.status == "dispatched":
+        raise HTTPException(status_code=400, detail="Already dispatched")
+    qty = row.quantity_assigned - row.quantity_dispatched
+    # Deduct from stock
+    stock = db.query(models.Stock).filter(models.Stock.sku == row.sku).first()
+    if stock:
+        stock.quantity_on_hand = max(0, stock.quantity_on_hand - qty)
+        stock.quantity_reserved = max(0, stock.quantity_reserved - row.quantity_assigned)
+        stock.updated_at = datetime.utcnow()
+    db.execute(text("""
+        UPDATE stock_assignments 
+        SET status='dispatched', quantity_dispatched=quantity_assigned, dispatched_at=NOW()
+        WHERE id=:id
+    """), {"id": assignment_id})
+    db.commit()
+    return {"success": True}
+
+@router.delete("/stock/assignments/{assignment_id}")
+def cancel_assignment(assignment_id: int, db: Session = Depends(get_db)):
+    from sqlalchemy import text
+    row = db.execute(text("SELECT * FROM stock_assignments WHERE id = :id"), {"id": assignment_id}).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    if row.status == "reserved":
+        stock = db.query(models.Stock).filter(models.Stock.sku == row.sku).first()
+        if stock:
+            stock.quantity_reserved = max(0, stock.quantity_reserved - row.quantity_assigned)
+            stock.updated_at = datetime.utcnow()
+    db.execute(text("DELETE FROM stock_assignments WHERE id = :id"), {"id": assignment_id})
+    db.commit()
+    return {"success": True}
