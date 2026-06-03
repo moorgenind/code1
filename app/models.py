@@ -266,6 +266,7 @@ class POLineItem(Base):
     product_name = Column(String(255), nullable=True)
     quantity_ordered = Column(Integer)
     quantity_received = Column(Integer, default=0)
+    supplier = Column(String(255), default="Moorgen")
     unit_cost = Column(Numeric(14,2))
     line_total = Column(Numeric(14,2))
     po = relationship("PurchaseOrder", back_populates="line_items")
