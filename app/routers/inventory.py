@@ -19,7 +19,7 @@ class POLineItemCreate(BaseModel):
     supplier: Optional[str] = "Moorgen"
 
 class POCreate(BaseModel):
-    lead_id: int
+    lead_id: Optional[int] = None
     notes: Optional[str] = None
     line_items: List[POLineItemCreate] = []
 
