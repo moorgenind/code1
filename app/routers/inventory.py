@@ -488,8 +488,8 @@ def get_project_needs(db: Session = Depends(get_db)):
             ORDER BY clean_sku
         """), {"lead_id": lead.lead_id}).fetchall()
 
-        if not items:
-            continue
+        # Still include projects with no SKU items
+        # (they will show 0 coverage)
 
         needs = []
         fully_covered = 0
