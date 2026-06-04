@@ -438,3 +438,103 @@ async def parse_pi(file: UploadFile = File(...)):
         return result
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to parse PDF: {str(e)}")
+
+# ── Project Needs ─────────────────────────────────────
+@router.get("/project-needs")
+def get_project_needs(db: Session = Depends(get_db)):
+    from sqlalchemy import text
+    
+    # Get all won leads with BOQs
+    leads = db.execute(text("""
+        SELECT DISTINCT l.lead_id, l.client_name, l.project_name, l.lead_code, l.city
+        FROM leads l
+        JOIN boqs b ON b.lead_id = l.lead_id
+        JOIN boq_line_items bli ON bli.boq_id = b.boq_id
+        WHERE l.status = 'won'
+        AND bli.product_sku IS NOT NULL AND bli.product_sku != ''
+        AND bli.product_sku NOT LIKE 'OEM%'
+        ORDER BY l.client_name
+    """)).fetchall()
+
+    # Get all stock
+    stock_rows = db.execute(text("SELECT sku, quantity_on_hand, quantity_reserved FROM stock")).fetchall()
+    stock_map = {r.sku: {'on_hand': r.quantity_on_hand, 'reserved': r.quantity_reserved, 'available': r.quantity_on_hand - r.quantity_reserved} for r in stock_rows}
+
+    # Get all stock assignments
+    assignments = db.execute(text("""
+        SELECT sa.sku, sa.lead_id, sa.quantity_assigned, sa.status
+        FROM stock_assignments sa
+        WHERE sa.status = 'reserved'
+    """)).fetchall()
+    assignment_map = {}
+    for a in assignments:
+        key = (a.sku, a.lead_id)
+        assignment_map[key] = assignment_map.get(key, 0) + a.quantity_assigned
+
+    result = []
+    for lead in leads:
+        # Get BOQ line items for this lead, consolidate by SKU
+        items = db.execute(text("""
+            SELECT 
+                CASE 
+                    WHEN bli.product_sku LIKE 'ARCH-%%' THEN SUBSTRING(bli.product_sku, 6)
+                    WHEN bli.product_sku LIKE 'DEC-%%' THEN SUBSTRING(bli.product_sku, 5)
+                    ELSE bli.product_sku
+                END as clean_sku,
+                bli.product_name,
+                SUM(bli.quantity) as total_qty
+            FROM boqs b
+            JOIN boq_line_items bli ON bli.boq_id = b.boq_id
+            WHERE b.lead_id = :lead_id
+            AND bli.product_sku IS NOT NULL AND bli.product_sku != ''
+            AND bli.product_sku NOT LIKE 'OEM%%'
+            GROUP BY clean_sku, bli.product_name
+            ORDER BY clean_sku
+        """), {"lead_id": lead.lead_id}).fetchall()
+
+        if not items:
+            continue
+
+        needs = []
+        fully_covered = 0
+        needs_ordering = 0
+
+        for item in items:
+            sku = item.clean_sku
+            needed = int(item.total_qty)
+            stock = stock_map.get(sku, {'on_hand': 0, 'reserved': 0, 'available': 0})
+            already_assigned = assignment_map.get((sku, lead.lead_id), 0)
+            available = stock['available'] + already_assigned  # don't double count
+            can_cover = min(needed, available)
+            gap = max(0, needed - can_cover)
+
+            if gap == 0:
+                fully_covered += 1
+            else:
+                needs_ordering += 1
+
+            needs.append({
+                'sku': sku,
+                'product_name': item.product_name,
+                'needed': needed,
+                'in_stock': stock['on_hand'],
+                'available': stock['available'],
+                'assigned': already_assigned,
+                'can_cover': can_cover,
+                'gap': gap,
+                'status': 'covered' if gap == 0 else ('partial' if can_cover > 0 else 'needed'),
+            })
+
+        result.append({
+            'lead_id': lead.lead_id,
+            'client_name': lead.client_name,
+            'project_name': lead.project_name,
+            'lead_code': lead.lead_code,
+            'city': lead.city,
+            'total_skus': len(needs),
+            'fully_covered': fully_covered,
+            'needs_ordering': needs_ordering,
+            'items': needs,
+        })
+
+    return result
