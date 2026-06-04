@@ -216,6 +216,16 @@ def update_line_item(boq_id: int, line_item_id: int, item: dict = Body(...), db:
         )
     if "level" in item: line_item.level = item["level"]
     if "area" in item: line_item.area = item["area"]
+    if "product_name" in item: line_item.product_name = item["product_name"]
+    if "product_sku" in item: line_item.product_sku = item["product_sku"]
+    if "notes" in item: line_item.notes = item["notes"]
+    if "unit_price" in item:
+        line_item.unit_price = Decimal(str(item["unit_price"]))
+        line_item.line_total = calculate_line_total(
+            quantity=line_item.quantity,
+            unit_price=Decimal(str(item["unit_price"])),
+            discount_pct=line_item.discount_pct or Decimal("0"),
+        )
     boq.total_amount = calculate_boq_total(boq.line_items)
     db.commit()
     db.refresh(boq)
