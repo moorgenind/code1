@@ -444,15 +444,11 @@ async def parse_pi(file: UploadFile = File(...)):
 def get_project_needs(db: Session = Depends(get_db)):
     from sqlalchemy import text
     
-    # Get all won leads with BOQs
+    # Get all won leads
     leads = db.execute(text("""
-        SELECT DISTINCT l.lead_id, l.client_name, l.project_name, l.lead_code, l.city
+        SELECT l.lead_id, l.client_name, l.project_name, l.lead_code, l.city
         FROM leads l
-        JOIN boqs b ON b.lead_id = l.lead_id
-        JOIN boq_line_items bli ON bli.boq_id = b.boq_id
         WHERE l.status = 'won'
-        AND bli.product_sku IS NOT NULL AND bli.product_sku != ''
-        AND bli.product_sku NOT LIKE 'OEM%'
         ORDER BY l.client_name
     """)).fetchall()
 
