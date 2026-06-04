@@ -342,26 +342,19 @@ def parse_pi_pdf(pdf_bytes: bytes) -> dict:
     # Extract total
     total_match = re.search(r'Total Amount[：:]\s*US\$?([\d,\.]+)', text)
     total_usd = float(total_match.group(1).replace(',', '')) if total_match else 0
-
-    # Parse line items from the contract section (more reliable)
-    # Look for the A-1 GOODS SOLD section
+    # Parse line items - contract page format:
+    # "1 moorgen MB3803 75 Spotlight Round - Trim pcs 12.99 880 US$11,431.20"
     items = []
-    seen = set()
-
-    # Pattern: row number, brand, module/sku, product name, unit, qty, price
-    # Try contract format first: "1 moorgen SKU Product Name pcs qty price"
     contract_pattern = re.compile(
-        r'^\s*(\d+)\s+moorgen\s+([A-Z0-9\-/\.]+)\s+(.+?)\s+pcs\s+([\d,\.]+)\s+([\d,\.]+)',
+        r'^\s*\d+\s+moorgen\s+([A-Z0-9][A-Z0-9\-/\.]*)\s+(.+?)\s+pcs\s+([\d\.]+)\s+([\d,]+)',
         re.MULTILINE | re.IGNORECASE
     )
     for m in contract_pattern.finditer(text):
-        sku = m.group(2).strip()
-        name = m.group(3).strip()
-        qty = int(float(m.group(4).replace(',', '')))
-        unit_cost = float(m.group(5).replace(',', ''))
-        key = f"{sku}-{qty}"
-        if key not in seen and sku and qty > 0 and unit_cost > 0:
-            seen.add(key)
+        sku = m.group(1).strip()
+        name = m.group(2).strip()
+        unit_cost = float(m.group(3).replace(',', ''))
+        qty = int(m.group(4).replace(',', ''))
+        if sku and qty > 0 and unit_cost > 0:
             items.append({
                 "sku": sku,
                 "product_name": name,
@@ -370,20 +363,17 @@ def parse_pi_pdf(pdf_bytes: bytes) -> dict:
                 "line_total": round(qty * unit_cost, 2),
                 "supplier": "Moorgen",
             })
-
-    # Fallback: PI page format "1 moorgen ProductName SKU PCS US$price qty US$total"
+    # Fallback: PI page 1 - SKU appears before PCS
     if not items:
         pi_pattern = re.compile(
-            r'^\s*(\d+)\s+moorgen\s+.{0,60}?\s+([A-Z][A-Z0-9\-/\.]{3,})\s+PCS\s+US\$([\d,\.]+)\s+(\d+)',
+            r'^\s*\d+\s+moorgen\s+.{5,80}?\s+([A-Z][A-Z0-9\-/\.]{3,})\s+PCS\s+US\$([\d,\.]+)\s+([\d,]+)',
             re.MULTILINE | re.IGNORECASE
         )
         for m in pi_pattern.finditer(text):
-            sku = m.group(2).strip()
-            unit_cost = float(m.group(3).replace(',', ''))
-            qty = int(m.group(4))
-            key = f"{sku}-{qty}"
-            if key not in seen and qty > 0 and unit_cost > 0:
-                seen.add(key)
+            sku = m.group(1).strip()
+            unit_cost = float(m.group(2).replace(',', ''))
+            qty = int(m.group(3).replace(',', ''))
+            if qty > 0 and unit_cost > 0:
                 items.append({
                     "sku": sku,
                     "product_name": sku,
