@@ -565,3 +565,12 @@ def get_project_needs(db: Session = Depends(get_db)):
         })
 
     return result
+
+@router.patch("/purchase-orders/{po_id}/assign")
+def assign_po_to_lead(po_id: int, lead_id: int, db: Session = Depends(get_db)):
+    po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.po_id == po_id).first()
+    if not po:
+        raise HTTPException(status_code=404, detail="PO not found")
+    po.lead_id = lead_id
+    db.commit()
+    return {"success": True}
