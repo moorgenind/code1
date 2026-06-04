@@ -474,7 +474,7 @@ async def parse_pi(file: UploadFile = File(...)):
 @router.get("/project-needs")
 def get_project_needs(db: Session = Depends(get_db)):
     from sqlalchemy import text
-    
+
     # Get all won leads
     leads = db.execute(text("""
         SELECT l.lead_id, l.client_name, l.project_name, l.lead_code, l.city
@@ -483,15 +483,25 @@ def get_project_needs(db: Session = Depends(get_db)):
         ORDER BY l.client_name
     """)).fetchall()
 
-    # Get all stock
+    # Stock map
     stock_rows = db.execute(text("SELECT sku, quantity_on_hand, quantity_reserved FROM stock")).fetchall()
     stock_map = {r.sku: {'on_hand': r.quantity_on_hand, 'reserved': r.quantity_reserved, 'available': r.quantity_on_hand - r.quantity_reserved} for r in stock_rows}
 
-    # Get all stock assignments
+    # Incoming map (ordered + in_transit POs)
+    incoming_rows = db.execute(text("""
+        SELECT pli.sku, SUM(pli.quantity_ordered) as qty
+        FROM purchase_orders po
+        JOIN po_line_items pli ON pli.po_id = po.po_id
+        WHERE po.status IN ('ordered', 'in_transit')
+        AND pli.sku IS NOT NULL AND pli.sku != ''
+        GROUP BY pli.sku
+    """)).fetchall()
+    incoming_map = {r.sku: int(r.qty) for r in incoming_rows}
+
+    # Stock assignments
     assignments = db.execute(text("""
-        SELECT sa.sku, sa.lead_id, sa.quantity_assigned, sa.status
-        FROM stock_assignments sa
-        WHERE sa.status = 'reserved'
+        SELECT sa.sku, sa.lead_id, sa.quantity_assigned
+        FROM stock_assignments sa WHERE sa.status = 'reserved'
     """)).fetchall()
     assignment_map = {}
     for a in assignments:
@@ -500,10 +510,9 @@ def get_project_needs(db: Session = Depends(get_db)):
 
     result = []
     for lead in leads:
-        # Get BOQ line items for this lead, consolidate by SKU
         items = db.execute(text("""
-            SELECT 
-                CASE 
+            SELECT
+                CASE
                     WHEN bli.product_sku LIKE 'ARCH-%%' THEN SUBSTRING(bli.product_sku, 6)
                     WHEN bli.product_sku LIKE 'DEC-%%' THEN SUBSTRING(bli.product_sku, 5)
                     ELSE bli.product_sku
@@ -519,11 +528,12 @@ def get_project_needs(db: Session = Depends(get_db)):
             ORDER BY clean_sku
         """), {"lead_id": lead.lead_id}).fetchall()
 
-        # Still include projects with no SKU items
-        # (they will show 0 coverage)
+        if not items:
+            continue  # Skip projects with no trackable SKUs
 
         needs = []
         fully_covered = 0
+        incoming_covered = 0
         needs_ordering = 0
 
         for item in items:
@@ -531,13 +541,25 @@ def get_project_needs(db: Session = Depends(get_db)):
             needed = int(item.total_qty)
             stock = stock_map.get(sku, {'on_hand': 0, 'reserved': 0, 'available': 0})
             already_assigned = assignment_map.get((sku, lead.lead_id), 0)
-            available = stock['available'] + already_assigned  # don't double count
-            can_cover = min(needed, available)
-            gap = max(0, needed - can_cover)
+            available = stock['available'] + already_assigned
+            incoming = incoming_map.get(sku, 0)
 
-            if gap == 0:
+            can_cover_stock = min(needed, available)
+            remaining_after_stock = max(0, needed - can_cover_stock)
+            can_cover_incoming = min(remaining_after_stock, incoming)
+            gap = max(0, needed - can_cover_stock - can_cover_incoming)
+
+            if gap == 0 and can_cover_stock >= needed:
+                status = 'covered'
                 fully_covered += 1
+            elif gap == 0 and can_cover_incoming > 0:
+                status = 'incoming'
+                incoming_covered += 1
+            elif can_cover_stock > 0 or can_cover_incoming > 0:
+                status = 'partial'
+                needs_ordering += 1
             else:
+                status = 'needed'
                 needs_ordering += 1
 
             needs.append({
@@ -546,10 +568,11 @@ def get_project_needs(db: Session = Depends(get_db)):
                 'needed': needed,
                 'in_stock': stock['on_hand'],
                 'available': stock['available'],
+                'incoming': incoming,
                 'assigned': already_assigned,
-                'can_cover': can_cover,
+                'can_cover': can_cover_stock + can_cover_incoming,
                 'gap': gap,
-                'status': 'covered' if gap == 0 else ('partial' if can_cover > 0 else 'needed'),
+                'status': status,
             })
 
         result.append({
@@ -560,6 +583,7 @@ def get_project_needs(db: Session = Depends(get_db)):
             'city': lead.city,
             'total_skus': len(needs),
             'fully_covered': fully_covered,
+            'incoming_covered': incoming_covered,
             'needs_ordering': needs_ordering,
             'items': needs,
         })
