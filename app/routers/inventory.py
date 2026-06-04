@@ -310,3 +310,103 @@ def cancel_assignment(assignment_id: int, db: Session = Depends(get_db)):
     db.execute(text("DELETE FROM stock_assignments WHERE id = :id"), {"id": assignment_id})
     db.commit()
     return {"success": True}
+
+# ── PI Upload & Parse ─────────────────────────────────
+from fastapi import UploadFile, File
+import pdfplumber
+import io
+import re
+
+def parse_pi_pdf(pdf_bytes: bytes) -> dict:
+    """Extract PI number, date, and line items from a Moorgen PI PDF."""
+    text = ""
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        for page in pdf.pages:
+            t = page.extract_text()
+            if t:
+                text += t + "\n"
+
+    # Extract PI number
+    pi_match = re.search(r'PI\s*#[:\s]*([A-Z0-9\-/\.]+)', text)
+    pi_number = pi_match.group(1).strip() if pi_match else ""
+
+    # Extract date
+    date_match = re.search(r'Date[:\s]+([A-Za-z0-9\s\./,]+?)(?:\n|PI)', text)
+    date_str = date_match.group(1).strip() if date_match else ""
+
+    # Extract supplier (customer field tells us it's Reset or direct)
+    supplier = "Moorgen"
+    if "Reset Illuminat" in text:
+        supplier = "Moorgen"
+
+    # Extract total
+    total_match = re.search(r'Total Amount[：:]\s*US\$?([\d,\.]+)', text)
+    total_usd = float(total_match.group(1).replace(',', '')) if total_match else 0
+
+    # Parse line items from the contract section (more reliable)
+    # Look for the A-1 GOODS SOLD section
+    items = []
+    seen = set()
+
+    # Pattern: row number, brand, module/sku, product name, unit, qty, price
+    # Try contract format first: "1 moorgen SKU Product Name pcs qty price"
+    contract_pattern = re.compile(
+        r'^\s*(\d+)\s+moorgen\s+([A-Z0-9\-/\.]+)\s+(.+?)\s+pcs\s+([\d,\.]+)\s+([\d,\.]+)',
+        re.MULTILINE | re.IGNORECASE
+    )
+    for m in contract_pattern.finditer(text):
+        sku = m.group(2).strip()
+        name = m.group(3).strip()
+        qty = int(float(m.group(4).replace(',', '')))
+        unit_cost = float(m.group(5).replace(',', ''))
+        key = f"{sku}-{qty}"
+        if key not in seen and sku and qty > 0 and unit_cost > 0:
+            seen.add(key)
+            items.append({
+                "sku": sku,
+                "product_name": name,
+                "quantity_ordered": qty,
+                "unit_cost": unit_cost,
+                "line_total": round(qty * unit_cost, 2),
+                "supplier": "Moorgen",
+            })
+
+    # Fallback: PI page format "1 moorgen ProductName SKU PCS US$price qty US$total"
+    if not items:
+        pi_pattern = re.compile(
+            r'^\s*(\d+)\s+moorgen\s+.{0,60}?\s+([A-Z][A-Z0-9\-/\.]{3,})\s+PCS\s+US\$([\d,\.]+)\s+(\d+)',
+            re.MULTILINE | re.IGNORECASE
+        )
+        for m in pi_pattern.finditer(text):
+            sku = m.group(2).strip()
+            unit_cost = float(m.group(3).replace(',', ''))
+            qty = int(m.group(4))
+            key = f"{sku}-{qty}"
+            if key not in seen and qty > 0 and unit_cost > 0:
+                seen.add(key)
+                items.append({
+                    "sku": sku,
+                    "product_name": sku,
+                    "quantity_ordered": qty,
+                    "unit_cost": unit_cost,
+                    "line_total": round(qty * unit_cost, 2),
+                    "supplier": "Moorgen",
+                })
+
+    return {
+        "pi_number": pi_number,
+        "date": date_str,
+        "supplier": supplier,
+        "total_usd": total_usd,
+        "items": items,
+        "raw_text_preview": text[:500],
+    }
+
+@router.post("/parse-pi")
+async def parse_pi(file: UploadFile = File(...)):
+    contents = await file.read()
+    try:
+        result = parse_pi_pdf(contents)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse PDF: {str(e)}")
