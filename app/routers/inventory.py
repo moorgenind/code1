@@ -93,6 +93,14 @@ def inventory_dashboard(db: Session = Depends(get_db)):
             ]
         })
 
+    # Build incoming map from ordered/in_transit POs
+    incoming_map = {}
+    for po in pos:
+        if po.status in ("ordered", "in_transit"):
+            for item in po.line_items:
+                if item.sku:
+                    incoming_map[item.sku] = incoming_map.get(item.sku, 0) + item.quantity_ordered
+
     stock_list = []
     for s in stock:
         stock_list.append({
@@ -101,8 +109,29 @@ def inventory_dashboard(db: Session = Depends(get_db)):
             "product_name": s.product_name,
             "quantity_on_hand": s.quantity_on_hand,
             "quantity_reserved": s.quantity_reserved,
+            "quantity_incoming": incoming_map.get(s.sku, 0),
             "available": s.quantity_on_hand - s.quantity_reserved,
         })
+    # Add SKUs that are incoming but not yet in stock
+    existing_skus = {s.sku for s in stock}
+    for sku, qty in incoming_map.items():
+        if sku not in existing_skus:
+            # Find product name from PO line items
+            name = sku
+            for po in pos:
+                for item in po.line_items:
+                    if item.sku == sku:
+                        name = item.product_name
+                        break
+            stock_list.append({
+                "id": None,
+                "sku": sku,
+                "product_name": name,
+                "quantity_on_hand": 0,
+                "quantity_reserved": 0,
+                "quantity_incoming": qty,
+                "available": 0,
+            })
 
     return {
         "summary": {
@@ -169,6 +198,8 @@ def update_po_status(po_id: int, status: str, db: Session = Depends(get_db)):
     if status == "ordered":
         po.ordered_at = datetime.utcnow()
         # Reserve Moorgen stock when ordered
+    elif status == "in_transit":
+        po.ordered_at = po.ordered_at or datetime.utcnow()
         apply_reservations(po, db)
 
     elif status == "received":
