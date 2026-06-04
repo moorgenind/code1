@@ -342,28 +342,67 @@ def parse_pi_pdf(pdf_bytes: bytes) -> dict:
     # Extract total
     total_match = re.search(r'Total Amount[：:]\s*US\$?([\d,\.]+)', text)
     total_usd = float(total_match.group(1).replace(',', '')) if total_match else 0
-    # Parse line items - contract page format:
-    # "1 moorgen MB3803 75 Spotlight Round - Trim pcs 12.99 880 US$11,431.20"
+    # Parse line items line-by-line
+    # Product name can appear: inline on same row, on next row, or as standalone header
+    # "1 moorgen TB8317ZC27 pcs 102.65 5 US$513.24"       <- no name
+    # "2 moorgen MB8956 Two-channel Smart Dimming Panel pcs 19.41 5"  <- name inline
+    # "Three-channel Smart Panel"                          <- standalone header
+    # "6 moorgen TB8913Z pcs 12.94 15 US$194.12"          <- gets name from header above
     items = []
-    contract_pattern = re.compile(
-        r'^\s*\d+\s+moorgen\s+([A-Z0-9][A-Z0-9\-/\.]*)\s+(.+?)\s+pcs\s+([\d\.]+)\s+([\d,]+)',
-        re.MULTILINE | re.IGNORECASE
+    text_lines = text.split("\n")
+    last_name = ""
+
+    item_re = re.compile(
+        r'^\s*(\d+)\s+moorgen\s+([A-Z0-9][A-Z0-9\-/\.]*)\s*(.*?)pcs\s+([\d\.]+)\s+([\d,]+)',
+        re.IGNORECASE
     )
-    for m in contract_pattern.finditer(text):
-        sku = m.group(1).strip()
-        name = m.group(2).strip()
-        unit_cost = float(m.group(3).replace(',', ''))
-        qty = int(m.group(4).replace(',', ''))
-        if sku and qty > 0 and unit_cost > 0:
-            items.append({
-                "sku": sku,
-                "product_name": name,
-                "quantity_ordered": qty,
-                "unit_cost": unit_cost,
-                "line_total": round(qty * unit_cost, 2),
-                "supplier": "Moorgen",
-            })
-    # Fallback: PI page 1 - SKU appears before PCS
+    header_re = re.compile(
+        r'^([A-Z][a-zA-Z\s\-]{8,50})$'
+    )
+
+    for i, line in enumerate(text_lines):
+        line = line.strip()
+        # Check if standalone header line
+        hm = header_re.match(line)
+        if hm and "moorgen" not in line.lower() and "total" not in line.lower() and "unit price" not in line.lower() and "no." not in line.lower() and "(usd)" not in line.lower() and "limited" not in line.lower() and "private" not in line.lower() and "seller" not in line.lower() and "buyer" not in line.lower() and "goods sold" not in line.lower() and "contract" not in line.lower() and "zhejiang" not in line.lower():
+            last_name = hm.group(1).strip()
+            continue
+        # Check if item row
+        m = item_re.match(line)
+        if m:
+            sku = m.group(2).strip()
+            name_part = m.group(3).strip()
+            unit_cost = float(m.group(4).replace(',', ''))
+            qty = int(m.group(5).replace(',', ''))
+            # Check next line for product name if not inline
+            if len(name_part) > 3:
+                last_name = name_part
+                product_name = name_part
+            else:
+                # Look ahead at next line
+                next_line = text_lines[i+1].strip() if i+1 < len(text_lines) else ""
+                nm = item_re.match(next_line)
+                if not nm and len(next_line) > 3 and not next_line.startswith("(") and "moorgen" not in next_line.lower() and "pcs" not in next_line.lower() and "total" not in next_line.lower() and "unit price" not in next_line.lower() and "(usd)" not in next_line.lower() and "amount" not in next_line.lower() and "no." not in next_line.lower() and next_line[0].isupper():
+                    last_name = next_line
+                    product_name = next_line
+                else:
+                    product_name = last_name if last_name else sku
+                    # Sanity check - if name looks like boilerplate, use SKU
+                    boilerplate = ["bank", "seller", "buyer", "contract", "payment", "address", "details", "illuminat", "zhejiang", "moorgen", "changluo"]
+                    if any(b in product_name.lower() for b in boilerplate):
+                        product_name = sku
+                        last_name = ""
+            if sku and qty > 0 and unit_cost > 0:
+                items.append({
+                    "sku": sku,
+                    "product_name": product_name,
+                    "quantity_ordered": qty,
+                    "unit_cost": unit_cost,
+                    "line_total": round(qty * unit_cost, 2),
+                    "supplier": "Moorgen",
+                })
+
+    # Fallback: PI page 1 format
     if not items:
         pi_pattern = re.compile(
             r'^\s*\d+\s+moorgen\s+.{5,80}?\s+([A-Z][A-Z0-9\-/\.]{3,})\s+PCS\s+US\$([\d,\.]+)\s+([\d,]+)',
@@ -382,7 +421,6 @@ def parse_pi_pdf(pdf_bytes: bytes) -> dict:
                     "line_total": round(qty * unit_cost, 2),
                     "supplier": "Moorgen",
                 })
-
     return {
         "pi_number": pi_number,
         "date": date_str,
