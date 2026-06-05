@@ -223,6 +223,22 @@ def update_po_status(po_id: int, status: str, db: Session = Depends(get_db)):
                 db.add(stock)
             item.quantity_received = item.quantity_ordered
 
+    elif status in ("ordered", "in_transit"):
+        # Reverse stock if coming back from received
+        if old_status == "received":
+            for item in po.line_items:
+                if not item.sku:
+                    continue
+                stock = db.query(models.Stock).filter(models.Stock.sku == item.sku).first()
+                if stock:
+                    stock.quantity_on_hand = max(0, stock.quantity_on_hand - item.quantity_received)
+                    stock.updated_at = datetime.utcnow()
+                item.quantity_received = 0
+            po.received_at = None
+        if status == "ordered":
+            po.ordered_at = po.ordered_at or datetime.utcnow()
+        elif status == "in_transit":
+            po.ordered_at = po.ordered_at or datetime.utcnow()
     elif status == "cancelled":
         # Release any reservations
         if old_status == "ordered":
@@ -652,3 +668,50 @@ def dispatch_lf_stock(payload: LFDispatch, db: Session = Depends(get_db)):
         db.execute(text("UPDATE lf_stock SET quantity = :q WHERE id = :id"), {"q": new_qty, "id": payload.item_id})
     db.commit()
     return {"success": True, "remaining": new_qty}
+
+# ── Partial Receipt ───────────────────────────────────
+class PartialReceiptItem(BaseModel):
+    line_item_id: int
+    quantity_received: int
+
+class PartialReceipt(BaseModel):
+    items: List[PartialReceiptItem]
+
+@router.post("/purchase-orders/{po_id}/receive")
+def partial_receive(po_id: int, payload: PartialReceipt, db: Session = Depends(get_db)):
+    po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.po_id == po_id).first()
+    if not po:
+        raise HTTPException(status_code=404, detail="PO not found")
+    
+    for receipt in payload.items:
+        item = db.query(models.POLineItem).filter(models.POLineItem.id == receipt.line_item_id).first()
+        if not item:
+            continue
+        additional = receipt.quantity_received - item.quantity_received
+        if additional <= 0:
+            continue
+        # Update stock
+        stock = db.query(models.Stock).filter(models.Stock.sku == item.sku).first()
+        if stock:
+            stock.quantity_on_hand += additional
+            stock.updated_at = datetime.utcnow()
+        else:
+            stock = models.Stock(
+                sku=item.sku,
+                product_name=item.product_name,
+                quantity_on_hand=additional,
+                quantity_reserved=0,
+            )
+            db.add(stock)
+        item.quantity_received = receipt.quantity_received
+
+    # Check if fully received
+    all_received = all(i.quantity_received >= i.quantity_ordered for i in po.line_items)
+    if all_received:
+        po.status = "received"
+        po.received_at = datetime.utcnow()
+    else:
+        po.status = "in_transit"  # partial receipt = still in transit
+    
+    db.commit()
+    return {"success": True, "fully_received": all_received}
