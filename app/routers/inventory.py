@@ -547,6 +547,11 @@ def get_project_needs(db: Session = Depends(get_db)):
             already_assigned = assignment_map.get((sku, lead.lead_id), 0)
             already_dispatched = dispatched_map.get((sku, lead.lead_id), 0)
             available = stock['available'] + already_assigned
+            # Dispatched items count as fully covered
+            if already_dispatched >= needed:
+                needs.append({'sku': sku, 'product_name': item.product_name, 'needed': needed, 'in_stock': stock['on_hand'], 'available': stock['available'], 'incoming': incoming_map.get(sku,0), 'assigned': already_assigned, 'can_cover': needed, 'gap': 0, 'status': 'covered'})
+                fully_covered += 1
+                continue
             incoming = incoming_map.get(sku, 0)
 
             can_cover_stock = min(needed, available)
