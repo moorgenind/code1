@@ -608,3 +608,15 @@ def assign_po_to_lead(po_id: int, lead_id: int, db: Session = Depends(get_db)):
     po.lead_id = lead_id
     db.commit()
     return {"success": True}
+
+# ── LightForge Stock ──────────────────────────────────
+@router.get("/lf-stock")
+def get_lf_stock(db: Session = Depends(get_db)):
+    from sqlalchemy import text
+    rows = db.execute(text("""
+        SELECT sku, product_name, SUM(quantity) as quantity, stock_type, location
+        FROM lf_stock
+        GROUP BY sku, product_name, stock_type, location
+        ORDER BY stock_type, sku
+    """)).fetchall()
+    return [dict(r._mapping) for r in rows]
