@@ -713,3 +713,12 @@ def partial_receive(po_id: int, payload: PartialReceipt, db: Session = Depends(g
     
     db.commit()
     return {"success": True, "fully_received": all_received}
+
+@router.delete("/stock/{sku}")
+def delete_stock(sku: str, db: Session = Depends(get_db)):
+    stock = db.query(models.Stock).filter(models.Stock.sku == sku).first()
+    if not stock:
+        raise HTTPException(status_code=404, detail="Stock item not found")
+    db.delete(stock)
+    db.commit()
+    return {"success": True}
