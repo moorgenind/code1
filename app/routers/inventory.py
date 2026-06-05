@@ -195,9 +195,23 @@ def update_po_status(po_id: int, status: str, db: Session = Depends(get_db)):
     old_status = po.status
     po.status = status
 
-    if status == "ordered":
-        po.ordered_at = datetime.utcnow()
-        # Reserve Moorgen stock when ordered
+    if status in ("ordered", "in_transit"):
+        # Reverse stock if coming back from received
+        if old_status == "received":
+            for item in po.line_items:
+                if not item.sku:
+                    continue
+                stock = db.query(models.Stock).filter(models.Stock.sku == item.sku).first()
+                if stock:
+                    stock.quantity_on_hand = max(0, stock.quantity_on_hand - item.quantity_received)
+                    stock.updated_at = datetime.utcnow()
+                item.quantity_received = 0
+            po.received_at = None
+        if status == "ordered":
+            po.ordered_at = po.ordered_at or datetime.utcnow()
+        elif status == "in_transit":
+            po.ordered_at = po.ordered_at or datetime.utcnow()
+            apply_reservations(po, db)
     elif status == "in_transit":
         po.ordered_at = po.ordered_at or datetime.utcnow()
         apply_reservations(po, db)
@@ -223,22 +237,6 @@ def update_po_status(po_id: int, status: str, db: Session = Depends(get_db)):
                 db.add(stock)
             item.quantity_received = item.quantity_ordered
 
-    elif status in ("ordered", "in_transit"):
-        # Reverse stock if coming back from received
-        if old_status == "received":
-            for item in po.line_items:
-                if not item.sku:
-                    continue
-                stock = db.query(models.Stock).filter(models.Stock.sku == item.sku).first()
-                if stock:
-                    stock.quantity_on_hand = max(0, stock.quantity_on_hand - item.quantity_received)
-                    stock.updated_at = datetime.utcnow()
-                item.quantity_received = 0
-            po.received_at = None
-        if status == "ordered":
-            po.ordered_at = po.ordered_at or datetime.utcnow()
-        elif status == "in_transit":
-            po.ordered_at = po.ordered_at or datetime.utcnow()
     elif status == "cancelled":
         # Release any reservations
         if old_status == "ordered":
