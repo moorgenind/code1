@@ -148,6 +148,27 @@ def inventory_dashboard(db: Session = Depends(get_db)):
 
 @router.get("/stock")
 def get_stock(db: Session = Depends(get_db)):
+    from sqlalchemy import text
+    # Build incoming map
+    incoming = db.execute(text("""
+        SELECT pli.sku, SUM(pli.quantity_ordered) as qty, STRING_AGG(po.po_code, ', ') as po_codes
+        FROM purchase_orders po
+        JOIN po_line_items pli ON pli.po_id = po.po_id
+        WHERE po.status IN ('ordered', 'in_transit') AND pli.sku IS NOT NULL
+        GROUP BY pli.sku
+    """)).fetchall()
+    incoming_map = {r.sku: {'qty': int(r.qty), 'po_codes': r.po_codes} for r in incoming}
+    
+    # Build source PI map (most recent received PO per SKU)
+    sources = db.execute(text("""
+        SELECT DISTINCT ON (pli.sku) pli.sku, po.po_code
+        FROM po_line_items pli
+        JOIN purchase_orders po ON po.po_id = pli.po_id
+        WHERE po.status = 'received' AND pli.sku IS NOT NULL
+        ORDER BY pli.sku, po.received_at DESC NULLS LAST
+    """)).fetchall()
+    source_map = {r.sku: r.po_code for r in sources}
+    
     stock = db.query(models.Stock).all()
     return [
         {
@@ -155,11 +176,13 @@ def get_stock(db: Session = Depends(get_db)):
             "product_name": s.product_name,
             "quantity_on_hand": s.quantity_on_hand,
             "quantity_reserved": s.quantity_reserved,
+            "quantity_incoming": incoming_map.get(s.sku, {}).get('qty', 0),
+            "incoming_pos": incoming_map.get(s.sku, {}).get('po_codes', ''),
+            "source_po": source_map.get(s.sku, ''),
             "available": s.quantity_on_hand - s.quantity_reserved,
         }
         for s in stock
     ]
-
 @router.post("/purchase-orders")
 def create_po(payload: POCreate, db: Session = Depends(get_db)):
     po = models.PurchaseOrder(
