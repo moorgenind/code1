@@ -501,12 +501,16 @@ def get_project_needs(db: Session = Depends(get_db)):
     # Stock assignments
     assignments = db.execute(text("""
         SELECT sa.sku, sa.lead_id, sa.quantity_assigned
-        FROM stock_assignments sa WHERE sa.status = 'reserved'
+        FROM stock_assignments sa WHERE sa.status IN ('reserved', 'dispatched')
     """)).fetchall()
-    assignment_map = {}
+    assignment_map = {}  # reserved
+    dispatched_map = {}  # already dispatched to this project
     for a in assignments:
         key = (a.sku, a.lead_id)
-        assignment_map[key] = assignment_map.get(key, 0) + a.quantity_assigned
+        if a.status == 'reserved':
+            assignment_map[key] = assignment_map.get(key, 0) + a.quantity_assigned
+        else:
+            dispatched_map[key] = dispatched_map.get(key, 0) + a.quantity_assigned
 
     result = []
     for lead in leads:
@@ -541,6 +545,7 @@ def get_project_needs(db: Session = Depends(get_db)):
             needed = int(item.total_qty)
             stock = stock_map.get(sku, {'on_hand': 0, 'reserved': 0, 'available': 0})
             already_assigned = assignment_map.get((sku, lead.lead_id), 0)
+            already_dispatched = dispatched_map.get((sku, lead.lead_id), 0)
             available = stock['available'] + already_assigned
             incoming = incoming_map.get(sku, 0)
 
