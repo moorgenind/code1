@@ -614,9 +614,41 @@ def assign_po_to_lead(po_id: int, lead_id: int, db: Session = Depends(get_db)):
 def get_lf_stock(db: Session = Depends(get_db)):
     from sqlalchemy import text
     rows = db.execute(text("""
-        SELECT sku, product_name, SUM(quantity) as quantity, stock_type, location
-        FROM lf_stock
-        GROUP BY sku, product_name, stock_type, location
-        ORDER BY stock_type, sku
+        SELECT 
+            lf.id, lf.sku, 
+            COALESCE(p.name, lf.product_name) as product_name,
+            lf.quantity, lf.stock_type, lf.location, lf.notes
+        FROM lf_stock lf
+        LEFT JOIN products p ON p.sku = lf.sku
+        ORDER BY lf.stock_type, lf.sku
     """)).fetchall()
     return [dict(r._mapping) for r in rows]
+
+@router.patch("/lf-stock/{item_id}/type")
+def update_lf_stock_type(item_id: int, stock_type: str, db: Session = Depends(get_db)):
+    from sqlalchemy import text
+    db.execute(text("UPDATE lf_stock SET stock_type = :t WHERE id = :id"), {"t": stock_type, "id": item_id})
+    db.commit()
+    return {"success": True}
+
+class LFDispatch(BaseModel):
+    item_id: int
+    quantity: int
+    lead_id: Optional[int] = None
+    notes: Optional[str] = None
+
+@router.post("/lf-stock/dispatch")
+def dispatch_lf_stock(payload: LFDispatch, db: Session = Depends(get_db)):
+    from sqlalchemy import text
+    row = db.execute(text("SELECT * FROM lf_stock WHERE id = :id"), {"id": payload.item_id}).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="LF stock item not found")
+    if payload.quantity > row.quantity:
+        raise HTTPException(status_code=400, detail=f"Only {row.quantity} units available")
+    new_qty = row.quantity - payload.quantity
+    if new_qty == 0:
+        db.execute(text("DELETE FROM lf_stock WHERE id = :id"), {"id": payload.item_id})
+    else:
+        db.execute(text("UPDATE lf_stock SET quantity = :q WHERE id = :id"), {"q": new_qty, "id": payload.item_id})
+    db.commit()
+    return {"success": True, "remaining": new_qty}
