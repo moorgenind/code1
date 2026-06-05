@@ -500,7 +500,7 @@ def get_project_needs(db: Session = Depends(get_db)):
 
     # Stock assignments
     assignments = db.execute(text("""
-        SELECT sa.sku, sa.lead_id, sa.quantity_assigned
+        SELECT sa.sku, sa.lead_id, sa.quantity_assigned, sa.status
         FROM stock_assignments sa WHERE sa.status IN ('reserved', 'dispatched')
     """)).fetchall()
     assignment_map = {}  # reserved
