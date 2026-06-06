@@ -745,3 +745,12 @@ def delete_stock(sku: str, db: Session = Depends(get_db)):
     db.delete(stock)
     db.commit()
     return {"success": True}
+
+@router.patch("/purchase-orders/{po_id}/notes")
+def update_po_notes(po_id: int, notes: str, db: Session = Depends(get_db)):
+    po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.po_id == po_id).first()
+    if not po:
+        raise HTTPException(status_code=404, detail="PO not found")
+    po.notes = notes
+    db.commit()
+    return {"success": True}
