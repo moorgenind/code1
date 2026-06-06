@@ -580,7 +580,20 @@ def get_project_needs(db: Session = Depends(get_db)):
             ORDER BY clean_sku
         """), {"lead_id": lead.lead_id}).fetchall()
 
-        if not items:
+
+        # Also get OEM items for this project
+        oem_items = db.execute(text("""
+            SELECT bli.product_sku, bli.product_name, SUM(bli.quantity) as total_qty
+            FROM boqs b
+            JOIN boq_line_items bli ON bli.boq_id = b.boq_id
+            WHERE b.lead_id = :lead_id
+            AND bli.product_sku IS NOT NULL
+            AND bli.product_sku LIKE 'OEM%%'
+            GROUP BY bli.product_sku, bli.product_name
+            ORDER BY bli.product_sku
+        """), {"lead_id": lead.lead_id}).fetchall()
+
+        if not items and not oem_items:
             continue  # Skip projects with no trackable SKUs
 
         needs = []
@@ -633,17 +646,37 @@ def get_project_needs(db: Session = Depends(get_db)):
                 'status': status,
             })
 
+        # Add OEM items (sourced from Reset)
+        oem_needs = []
+        oem_needed = 0
+        for oem in oem_items:
+            oem_needs.append({
+                'sku': oem.product_sku,
+                'product_name': oem.product_name,
+                'needed': int(oem.total_qty),
+                'in_stock': 0,
+                'available': 0,
+                'incoming': 0,
+                'assigned': 0,
+                'can_cover': 0,
+                'gap': int(oem.total_qty),
+                'status': 'reset',
+                'supplier': 'Reset',
+            })
+            oem_needed += 1
+
         result.append({
             'lead_id': lead.lead_id,
             'client_name': lead.client_name,
             'project_name': lead.project_name,
             'lead_code': lead.lead_code,
             'city': lead.city,
-            'total_skus': len(needs),
+            'total_skus': len(needs) + oem_needed,
             'fully_covered': fully_covered,
             'incoming_covered': incoming_covered,
             'needs_ordering': needs_ordering,
-            'items': needs,
+            'oem_skus': oem_needed,
+            'items': needs + oem_needs,
         })
 
     return result
