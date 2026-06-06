@@ -101,6 +101,16 @@ def inventory_dashboard(db: Session = Depends(get_db)):
                 if item.sku:
                     incoming_map[item.sku] = incoming_map.get(item.sku, 0) + item.quantity_ordered
 
+    # Build source PI map
+    from sqlalchemy import text as sqla_text
+    sources = db.execute(sqla_text("""
+        SELECT DISTINCT ON (pli.sku) pli.sku, po.po_code
+        FROM po_line_items pli
+        JOIN purchase_orders po ON po.po_id = pli.po_id
+        WHERE po.status = 'received' AND pli.sku IS NOT NULL
+        ORDER BY pli.sku, po.received_at DESC NULLS LAST, po.created_at DESC
+    """)).fetchall()
+    source_map = {r.sku: r.po_code for r in sources}
     stock_list = []
     for s in stock:
         stock_list.append({
@@ -111,6 +121,7 @@ def inventory_dashboard(db: Session = Depends(get_db)):
             "quantity_reserved": s.quantity_reserved,
             "quantity_incoming": incoming_map.get(s.sku, 0),
             "available": s.quantity_on_hand - s.quantity_reserved,
+            "source_po": source_map.get(s.sku, ""),
         })
     # Add SKUs that are incoming but not yet in stock
     existing_skus = {s.sku for s in stock}
@@ -165,7 +176,7 @@ def get_stock(db: Session = Depends(get_db)):
         FROM po_line_items pli
         JOIN purchase_orders po ON po.po_id = pli.po_id
         WHERE po.status = 'received' AND pli.sku IS NOT NULL
-        ORDER BY pli.sku, po.received_at DESC NULLS LAST
+        ORDER BY pli.sku, po.received_at DESC NULLS LAST, po.created_at DESC
     """)).fetchall()
     source_map = {r.sku: r.po_code for r in sources}
     
