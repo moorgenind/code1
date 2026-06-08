@@ -309,6 +309,57 @@ def adjust_stock(payload: StockAdjust, db: Session = Depends(get_db)):
     db.commit()
     return {"success": True}
 
+# ── Stock Movements (samples / small orders / corrections, logged with a reason) ──
+STOCK_MOVEMENT_REASONS = {"sample", "small_order", "correction", "damage", "other"}
+
+class StockMovementCreate(BaseModel):
+    sku: str
+    quantity_delta: int  # negative = stock taken out (e.g. samples given away), positive = stock added back
+    reason: str          # one of: sample, small_order, correction, damage, other
+    notes: Optional[str] = None
+
+@router.post("/stock/log")
+def log_stock_movement(payload: StockMovementCreate, db: Session = Depends(get_db)):
+    reason = payload.reason if payload.reason in STOCK_MOVEMENT_REASONS else "other"
+    stock = db.query(models.Stock).filter(models.Stock.sku == payload.sku).first()
+    if not stock:
+        raise HTTPException(status_code=404, detail="SKU not found in stock")
+
+    new_qty = stock.quantity_on_hand + payload.quantity_delta
+    if new_qty < 0:
+        raise HTTPException(status_code=400, detail=f"Only {stock.quantity_on_hand} units on hand — cannot log a deduction of {-payload.quantity_delta}")
+
+    stock.quantity_on_hand = new_qty
+    stock.updated_at = datetime.utcnow()
+    db.add(models.StockMovement(
+        sku=payload.sku,
+        quantity_delta=payload.quantity_delta,
+        reason=reason,
+        notes=payload.notes,
+    ))
+    db.commit()
+    return {"success": True, "quantity_on_hand": stock.quantity_on_hand}
+
+@router.get("/stock/movements/{sku}")
+def get_stock_movements(sku: str, db: Session = Depends(get_db)):
+    rows = (
+        db.query(models.StockMovement)
+        .filter(models.StockMovement.sku == sku)
+        .order_by(models.StockMovement.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "quantity_delta": r.quantity_delta,
+            "reason": r.reason,
+            "notes": r.notes,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
+
 # ── Stock Assignments ─────────────────────────────────
 class StockAssignmentCreate(BaseModel):
     sku: str

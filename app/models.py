@@ -280,6 +280,18 @@ class Stock(Base):
     quantity_reserved = Column(Integer, default=0)
     updated_at = Column(DateTime, nullable=True)
 
+class StockMovement(Base):
+    """Audit log for ad-hoc stock deductions/additions outside the normal
+    PO / dealer-assignment flow — e.g. samples handed out, small walk-in
+    orders, corrections, damage write-offs."""
+    __tablename__ = "stock_movements"
+    id = Column(Integer, primary_key=True, index=True)
+    sku = Column(String(100), nullable=False, index=True)
+    quantity_delta = Column(Integer, nullable=False)  # negative = stock taken out
+    reason = Column(String(50), nullable=False, default="other")
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 class ProjectTracking(Base):
     __tablename__ = "project_tracking"
     id = Column(Integer, primary_key=True, index=True)
