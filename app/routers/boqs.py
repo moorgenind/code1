@@ -299,3 +299,13 @@ async def upload_line_item_image(
     line_item.image_url = image_url
     db.commit()
     return {"image_url": image_url}
+
+@router.delete("/{boq_id}")
+def delete_boq(boq_id: int, db: Session = Depends(get_db)):
+    boq = db.query(models.Boq).filter(models.Boq.boq_id == boq_id).first()
+    if not boq:
+        raise HTTPException(status_code=404, detail="BOQ not found")
+    db.query(models.BoqLineItem).filter(models.BoqLineItem.boq_id == boq_id).delete()
+    db.delete(boq)
+    db.commit()
+    return {"success": True}
