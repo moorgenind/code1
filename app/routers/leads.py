@@ -38,8 +38,9 @@ def generate_boq_code(db: Session) -> str:
     next_year_short = str(year + 1)[2:]
     prefix = f"BOQ-{short_year}{next_year_short}"
 
-    count = db.query(models.Boq).count()
-    number = str(count + 1).zfill(3)
+    from sqlalchemy import func
+    max_id = db.query(func.max(models.Boq.boq_id)).scalar() or 0
+    number = str(max_id + 1).zfill(3)
     return f"{prefix}-{number}"
 
 
