@@ -523,13 +523,14 @@ async def parse_pi(file: UploadFile = File(...)):
 def get_project_needs(db: Session = Depends(get_db)):
     from sqlalchemy import text
 
-    # Get all won leads
+    # Get all won leads (displayed alphabetically by client)
     leads = db.execute(text("""
         SELECT l.lead_id, l.client_name, l.project_name, l.lead_code, l.city
         FROM leads l
         WHERE l.status = 'won'
         ORDER BY l.client_name
     """)).fetchall()
+    lead_map = {l.lead_id: l for l in leads}
 
     # Stock map
     stock_rows = db.execute(text("SELECT sku, quantity_on_hand, quantity_reserved FROM stock")).fetchall()
@@ -560,7 +561,11 @@ def get_project_needs(db: Session = Depends(get_db)):
         else:
             dispatched_map[key] = dispatched_map.get(key, 0) + a.quantity_assigned
 
-    result = []
+    # ── Pass 1: collect each won project's non-OEM SKU demand ──
+    lead_items = {}      # lead_id -> [{sku, product_name, needed}]
+    lead_oem_items = {}  # lead_id -> [{sku, product_name, needed}]
+    sku_demand = {}      # sku -> [lead_id, ...] (every won project that needs this SKU)
+
     for lead in leads:
         items = db.execute(text("""
             SELECT
@@ -580,7 +585,6 @@ def get_project_needs(db: Session = Depends(get_db)):
             ORDER BY clean_sku
         """), {"lead_id": lead.lead_id}).fetchall()
 
-
         # Also get OEM items for this project
         oem_items = db.execute(text("""
             SELECT bli.product_sku, bli.product_name, SUM(bli.quantity) as total_qty
@@ -596,70 +600,176 @@ def get_project_needs(db: Session = Depends(get_db)):
         if not items and not oem_items:
             continue  # Skip projects with no trackable SKUs
 
+        lead_items[lead.lead_id] = [
+            {'sku': it.clean_sku, 'product_name': it.product_name, 'needed': int(it.total_qty)}
+            for it in items
+        ]
+        lead_oem_items[lead.lead_id] = [
+            {'sku': o.product_sku, 'product_name': o.product_name, 'needed': int(o.total_qty)}
+            for o in oem_items
+        ]
+        for it in items:
+            sku_demand.setdefault(it.clean_sku, []).append(lead.lead_id)
+
+    # ── Pass 2: for every contested SKU, allocate the shared stock/incoming pools
+    # across competing won projects in priority order, instead of letting each
+    # project check raw availability in isolation (which makes the same units
+    # look "available" to several projects at once).
+    #
+    # Priority: projects that already hold a reservation for the SKU go first
+    # (they staked their claim), then the rest in lead_id order (a stable proxy
+    # for the order projects were won, since there's no won_date column).
+    #
+    # allocation[(sku, lead_id)] -> claim from on-hand pool, claim from incoming,
+    # and how much of this project's need is "blocked" — i.e. stock that exists
+    # but has already been claimed by a higher-priority project.
+    allocation = {}
+
+    for sku, lead_ids in sku_demand.items():
+        stock = stock_map.get(sku, {'on_hand': 0, 'reserved': 0, 'available': 0})
+        pool = stock['available']
+        incoming = incoming_map.get(sku, 0)
+
+        competitors = []
+        for lid in lead_ids:
+            needed = next(it['needed'] for it in lead_items[lid] if it['sku'] == sku)
+            already_assigned = assignment_map.get((sku, lid), 0)
+            already_dispatched = dispatched_map.get((sku, lid), 0)
+            remaining = max(0, needed - already_assigned - already_dispatched)
+            competitors.append({
+                'lead_id': lid,
+                'remaining': remaining,
+                'has_reservation': already_assigned > 0,
+            })
+
+        ordered = sorted(competitors, key=lambda c: (0 if c['has_reservation'] else 1, c['lead_id']))
+        idx_of = {c['lead_id']: i for i, c in enumerate(ordered)}
+
+        consumed_pool = 0
+        consumed_incoming = 0
+        log = []
+        for c in ordered:
+            avail_pool = max(0, pool - consumed_pool)
+            claim_pool = min(c['remaining'], avail_pool)
+            consumed_pool += claim_pool
+
+            still_needed = c['remaining'] - claim_pool
+            avail_incoming = max(0, incoming - consumed_incoming)
+            claim_incoming = min(still_needed, avail_incoming)
+            consumed_incoming += claim_incoming
+
+            log.append({'lead_id': c['lead_id'], 'remaining': c['remaining'],
+                        'claim_pool': claim_pool, 'claim_incoming': claim_incoming})
+
+        for entry in log:
+            isolated = min(entry['remaining'], pool + incoming)
+            actual = entry['claim_pool'] + entry['claim_incoming']
+            blocked_amount = max(0, isolated - actual)
+            blocked_by = []
+            if blocked_amount > 0:
+                for other in log:
+                    if other['lead_id'] == entry['lead_id']:
+                        continue
+                    if idx_of[other['lead_id']] < idx_of[entry['lead_id']] and (other['claim_pool'] + other['claim_incoming']) > 0:
+                        other_lead = lead_map[other['lead_id']]
+                        blocked_by.append({
+                            'lead_id': other['lead_id'],
+                            'client_name': other_lead.client_name,
+                            'project_name': other_lead.project_name,
+                            'qty': other['claim_pool'] + other['claim_incoming'],
+                        })
+            allocation[(sku, entry['lead_id'])] = {
+                'claim_pool': entry['claim_pool'],
+                'claim_incoming': entry['claim_incoming'],
+                'blocked_amount': blocked_amount,
+                'blocked_by': blocked_by,
+            }
+
+    # ── Pass 3: assemble each project's view using the allocation outcome ──
+    result = []
+    for lead in leads:
+        if lead.lead_id not in lead_items:
+            continue
+
+        items = lead_items[lead.lead_id]
+        oem_items = lead_oem_items[lead.lead_id]
+
         needs = []
         fully_covered = 0
         incoming_covered = 0
         needs_ordering = 0
+        blocked_count = 0
 
         for item in items:
-            sku = item.clean_sku
-            needed = int(item.total_qty)
+            sku = item['sku']
+            needed = item['needed']
             stock = stock_map.get(sku, {'on_hand': 0, 'reserved': 0, 'available': 0})
             already_assigned = assignment_map.get((sku, lead.lead_id), 0)
             already_dispatched = dispatched_map.get((sku, lead.lead_id), 0)
-            available = stock['available'] + already_assigned
-            # Dispatched items count as fully covered
-            if already_dispatched >= needed:
-                needs.append({'sku': sku, 'product_name': item.product_name, 'needed': needed, 'in_stock': stock['on_hand'], 'available': stock['available'], 'incoming': incoming_map.get(sku,0), 'assigned': already_assigned, 'can_cover': needed, 'gap': 0, 'status': 'covered'})
-                fully_covered += 1
-                continue
             incoming = incoming_map.get(sku, 0)
 
-            can_cover_stock = min(needed, available)
-            remaining_after_stock = max(0, needed - can_cover_stock)
-            can_cover_incoming = min(remaining_after_stock, incoming)
-            gap = max(0, needed - can_cover_stock - can_cover_incoming)
-
-            if gap == 0 and can_cover_stock >= needed:
-                status = 'covered'
+            # Dispatched items count as fully covered
+            if already_dispatched >= needed:
+                needs.append({'sku': sku, 'product_name': item['product_name'], 'needed': needed,
+                              'in_stock': stock['on_hand'], 'available': stock['available'],
+                              'incoming': incoming, 'assigned': already_assigned,
+                              'can_cover': needed, 'gap': 0, 'status': 'covered'})
                 fully_covered += 1
-            elif gap == 0 and can_cover_incoming > 0:
-                status = 'incoming'
-                incoming_covered += 1
-            elif can_cover_stock > 0 or can_cover_incoming > 0:
+                continue
+
+            alloc = allocation.get((sku, lead.lead_id), {'claim_pool': 0, 'claim_incoming': 0, 'blocked_amount': 0, 'blocked_by': []})
+            can_cover_from_pools = alloc['claim_pool'] + alloc['claim_incoming']
+            can_cover = already_assigned + already_dispatched + can_cover_from_pools
+            gap = max(0, needed - can_cover)
+
+            if alloc['blocked_amount'] > 0:
+                status = 'blocked'
+                blocked_count += 1
+            elif gap == 0:
+                if (already_assigned + already_dispatched + alloc['claim_pool']) >= needed:
+                    status = 'covered'
+                    fully_covered += 1
+                else:
+                    status = 'incoming'
+                    incoming_covered += 1
+            elif can_cover > 0:
                 status = 'partial'
                 needs_ordering += 1
             else:
                 status = 'needed'
                 needs_ordering += 1
 
-            needs.append({
+            entry = {
                 'sku': sku,
-                'product_name': item.product_name,
+                'product_name': item['product_name'],
                 'needed': needed,
                 'in_stock': stock['on_hand'],
                 'available': stock['available'],
                 'incoming': incoming,
                 'assigned': already_assigned,
-                'can_cover': can_cover_stock + can_cover_incoming,
+                'can_cover': can_cover,
                 'gap': gap,
                 'status': status,
-            })
+            }
+            if alloc['blocked_amount'] > 0:
+                entry['blocked_qty'] = alloc['blocked_amount']
+                entry['blocked_by'] = alloc['blocked_by']
+            needs.append(entry)
 
         # Add OEM items (sourced from Reset)
         oem_needs = []
         oem_needed = 0
         for oem in oem_items:
             oem_needs.append({
-                'sku': oem.product_sku,
-                'product_name': oem.product_name,
-                'needed': int(oem.total_qty),
+                'sku': oem['sku'],
+                'product_name': oem['product_name'],
+                'needed': oem['needed'],
                 'in_stock': 0,
                 'available': 0,
                 'incoming': 0,
                 'assigned': 0,
                 'can_cover': 0,
-                'gap': int(oem.total_qty),
+                'gap': oem['needed'],
                 'status': 'reset',
                 'supplier': 'Reset',
             })
@@ -675,6 +785,7 @@ def get_project_needs(db: Session = Depends(get_db)):
             'fully_covered': fully_covered,
             'incoming_covered': incoming_covered,
             'needs_ordering': needs_ordering,
+            'blocked': blocked_count,
             'oem_skus': oem_needed,
             'items': needs + oem_needs,
         })
