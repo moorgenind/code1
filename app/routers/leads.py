@@ -122,23 +122,30 @@ def create_lead(payload: schemas.LeadCreate, db: Session = Depends(get_db)):
     db.add(lead)
     db.flush()  # get lead_id before commit
 
-    # Create Google Drive folder
-    try:
-        client = db.query(models.Client).filter(
-            models.Client.client_id == payload.client_id
-        ).first()
-        client_name = client.name if client else "Client"
-
-        drive_result = create_lead_folder_structure(
-            lead_code=lead_code,
-            client_name=client_name,
-            project_name=payload.project_name,
-            city=payload.city or "",
-        )
-        lead.drive_folder_url = drive_result["main_folder_link"]
-    except Exception as e:
-        # Don't fail lead creation if Drive fails
-        print(f"Drive folder creation failed: {e}")
+    # Create Google Drive folder in background (non-blocking)
+    import threading
+    def create_drive_folder():
+        try:
+            client_obj = db.query(models.Client).filter(
+                models.Client.client_id == payload.client_id
+            ).first()
+            client_name = client_obj.name if client_obj else 'Client'
+            drive_result = create_lead_folder_structure(
+                lead_code=lead_code,
+                client_name=client_name,
+                project_name=payload.project_name,
+                city=payload.city or '',
+            )
+            from app.database import SessionLocal
+            bg_db = SessionLocal()
+            bg_db.query(models.Lead).filter(models.Lead.lead_id == lead.lead_id).update(
+                {"drive_folder_url": drive_result["main_folder_link"]}
+            )
+            bg_db.commit()
+            bg_db.close()
+        except Exception as e:
+            print(f"Drive folder creation failed: {e}")
+    threading.Thread(target=create_drive_folder, daemon=True).start()
 
     # Auto-create BOQs based on scope flags
     boq_categories = []
