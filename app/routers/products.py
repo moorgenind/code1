@@ -345,44 +345,53 @@ _NEW_PRICES = {
 @router.get("/admin/apply-price-update")
 def admin_apply_price_update(
     token: str = Query(...),
-    commit: bool = Query(False),
+    commit: str = Query("false"),
     db: Session = Depends(get_db)
 ):
     """One-time admin endpoint to apply Jul 2026 automation price updates."""
+    from fastapi import HTTPException
+    from sqlalchemy import text
     if token != _PRICE_UPDATE_TOKEN:
-        from fastapi import HTTPException
         raise HTTPException(status_code=403, detail="Invalid token")
 
-    results = {"updated": [], "skipped_not_found": [], "skipped_no_change": []}
+    do_commit = commit.lower() == "true"
+
+    # Fetch current prices for all automation products in one query
+    rows = db.execute(
+        text("SELECT sku, unit_price FROM products WHERE category='automation' AND is_active=TRUE")
+    ).fetchall()
+    current = {r[0]: float(r[1]) if r[1] else 0.0 for r in rows}
+
+    to_update = []
+    not_found = []
+    no_change = []
 
     for sku, new_price in _NEW_PRICES.items():
-        product = db.query(models.Product).filter(
-            models.Product.sku == sku,
-            models.Product.category == "automation"
-        ).first()
-        if not product:
-            results["skipped_not_found"].append(sku)
-            continue
-        old_price = float(product.unit_price) if product.unit_price else 0.0
-        if abs(old_price - new_price) < 0.01:
-            results["skipped_no_change"].append(sku)
-            continue
-        results["updated"].append({
-            "sku": sku,
-            "old": old_price,
-            "new": new_price,
-            "pct": round((new_price - old_price) / old_price * 100, 1) if old_price else None
-        })
-        if commit:
-            product.unit_price = new_price
+        if sku not in current:
+            not_found.append(sku)
+        elif abs(current[sku] - new_price) < 0.01:
+            no_change.append(sku)
+        else:
+            to_update.append({"sku": sku, "old": current[sku], "new": new_price,
+                               "pct": round((new_price - current[sku]) / current[sku] * 100, 1)})
 
-    if commit:
+    if do_commit and to_update:
+        db.execute(
+            text("""
+                UPDATE products
+                SET unit_price = CASE sku """ +
+                " ".join(f"WHEN '{r['sku']}' THEN {r['new']}" for r in to_update) +
+                f" END WHERE sku IN ({','.join(repr(r['sku']) for r in to_update)})"
+                + " AND category='automation'"
+            )
+        )
         db.commit()
 
     return {
-        "mode": "COMMITTED" if commit else "DRY_RUN",
-        "total_updated": len(results["updated"]),
-        "not_found_in_db": len(results["skipped_not_found"]),
-        "no_change": len(results["skipped_no_change"]),
-        "details": results
+        "mode": "COMMITTED" if do_commit else "DRY_RUN",
+        "total_updated": len(to_update),
+        "not_found_in_db": len(not_found),
+        "no_change": len(no_change),
+        "updates": to_update,
+        "not_found": not_found,
     }
