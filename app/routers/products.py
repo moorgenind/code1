@@ -375,13 +375,22 @@ def admin_apply_price_update(
             to_update.append({"sku": sku, "old": current[sku], "new": new_price,
                                "pct": round((new_price - current[sku]) / current[sku] * 100, 1)})
 
-    if do_commit and to_update:
+    # Also count ZBP-prefixed variants that need updating
+    zbp_to_update = []
+    for r in to_update:
+        zbp_sku = "ZBP-" + r["sku"]
+        if zbp_sku in current and abs(current[zbp_sku] - r["new"]) > 0.01:
+            zbp_to_update.append({"sku": zbp_sku, "old": current[zbp_sku],
+                                   "new": r["new"], "pct": r["pct"]})
+
+    all_updates = to_update + zbp_to_update
+
+    if do_commit and all_updates:
         db.execute(
-            text("""
-                UPDATE products
-                SET unit_price = CASE sku """ +
-                " ".join(f"WHEN '{r['sku']}' THEN {r['new']}" for r in to_update) +
-                f" END WHERE sku IN ({','.join(repr(r['sku']) for r in to_update)})"
+            text(
+                "UPDATE products SET unit_price = CASE sku " +
+                " ".join(f"WHEN '{r['sku']}' THEN {r['new']}" for r in all_updates) +
+                f" END WHERE sku IN ({','.join(repr(r['sku']) for r in all_updates)})"
                 + " AND category='automation'"
             )
         )
@@ -389,9 +398,10 @@ def admin_apply_price_update(
 
     return {
         "mode": "COMMITTED" if do_commit else "DRY_RUN",
-        "total_updated": len(to_update),
+        "base_skus_updated": len(to_update),
+        "zbp_skus_updated": len(zbp_to_update),
+        "total_rows_updated": len(all_updates),
         "not_found_in_db": len(not_found),
-        "no_change": len(no_change),
-        "updates": to_update,
+        "updates": all_updates,
         "not_found": not_found,
     }
