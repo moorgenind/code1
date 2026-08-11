@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from decimal import Decimal
@@ -6,8 +6,22 @@ from typing import Optional, List
 from datetime import datetime
 from app.database import get_db
 from app import models
+import jwt, os
 
 router = APIRouter()
+
+JWT_SECRET = os.getenv("JWT_SECRET", "moorgen_secret_2526_key")
+JWT_ALGO = "HS256"
+
+def get_role_from_header(authorization: str = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization.split(" ", 1)[1]
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
+        return payload.get("role")
+    except Exception:
+        return None
 
 # ── Schemas ──────────────────────────────────────────
 class POLineItemCreate(BaseModel):
@@ -57,7 +71,8 @@ def apply_reservations(po: models.PurchaseOrder, db: Session):
 
 # ── Routes ────────────────────────────────────────────
 @router.get("/dashboard")
-def inventory_dashboard(db: Session = Depends(get_db)):
+def inventory_dashboard(db: Session = Depends(get_db), role: str = Depends(get_role_from_header)):
+    hide_pricing = (role == "procurement")
     pos = db.query(models.PurchaseOrder).order_by(models.PurchaseOrder.created_at.desc()).all()
     stock = db.query(models.Stock).all()
 
@@ -72,7 +87,7 @@ def inventory_dashboard(db: Session = Depends(get_db)):
             "client_name": lead.client_name if lead else None,
             "project_name": lead.project_name if lead else None,
             "status": po.status,
-            "total": total,
+            "total": (None if hide_pricing else total),
             "items_count": len(po.line_items),
             "created_at": po.created_at.isoformat() if po.created_at else None,
             "ordered_at": po.ordered_at.isoformat() if po.ordered_at else None,
@@ -85,8 +100,7 @@ def inventory_dashboard(db: Session = Depends(get_db)):
                     "product_name": i.product_name,
                     "quantity_ordered": i.quantity_ordered,
                     "quantity_received": i.quantity_received,
-                    "unit_cost": float(i.unit_cost),
-                    "line_total": float(i.line_total),
+                    **({} if hide_pricing else {"unit_cost": float(i.unit_cost), "line_total": float(i.line_total)}),
                     "supplier": i.supplier or "Moorgen",
                 }
                 for i in po.line_items

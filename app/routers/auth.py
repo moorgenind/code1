@@ -21,11 +21,12 @@ class LoginRequest(BaseModel):
 def hash_pw(pw: str) -> str:
     return hashlib.sha256(pw.encode()).hexdigest()
 
-def make_token(user_id: int, email: str, name: str) -> str:
+def make_token(user_id: int, email: str, name: str, role: str = "admin") -> str:
     payload = {
         "user_id": user_id,
         "email": email,
         "name": name,
+        "role": role,
         "exp": datetime.utcnow() + timedelta(days=30)
     }
     return jwt.encode(payload, SECRET, algorithm=ALGO)
@@ -64,7 +65,7 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
     if not user or user.password_hash != hash_pw(req.password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    token = make_token(user.user_id, user.email, user.name)
+    token = make_token(user.user_id, user.email, user.name, user.role)
 
     # Log this login as a session
     ua = request.headers.get("user-agent", "")
