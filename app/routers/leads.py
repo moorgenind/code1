@@ -78,9 +78,19 @@ def list_leads(
     if category:
         query = query.filter(models.Lead.category == category)
     leads = query.order_by(models.Lead.created_at.desc()).all()
+
+    from sqlalchemy import func
+    lead_ids = [l.lead_id for l in leads]
+    boq_totals = dict(
+        db.query(models.Boq.lead_id, func.coalesce(func.sum(models.Boq.total_amount), 0))
+        .filter(models.Boq.lead_id.in_(lead_ids))
+        .group_by(models.Boq.lead_id)
+        .all()
+    ) if lead_ids else {}
+
     result = []
     for lead in leads:
-        boq_value = sum(float(b.total_amount or 0) for b in lead.boqs)
+        boq_value = float(boq_totals.get(lead.lead_id, 0) or 0)
         d = {c.name: getattr(lead, c.name) for c in lead.__table__.columns}
         d["boq_value"] = boq_value
         result.append(d)
