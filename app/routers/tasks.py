@@ -11,9 +11,10 @@ from app import models
 
 router = APIRouter()
 
-HAJIRA_NAME = "Hajira"
-SHANMUKHI_NAME = "Shanmukhi"
-FEROZ_NAME = "Feroz"
+# Automation roles — reassign who handles what via the Team page, not code.
+ROLE_CRM_FOLLOWUP = "crm_followup"
+ROLE_BOQ_DESIGN = "boq_design"
+ROLE_LOGISTICS = "logistics"
 
 class TaskCreate(BaseModel):
     title: str
@@ -45,6 +46,14 @@ class TemplateCreate(BaseModel):
 def get_emp(db, name):
     return db.query(models.Employee).filter(models.Employee.name == name).first()
 
+def get_emp_by_role(db, automation_role):
+    """Look up the active employee currently holding an automation role.
+    Reassigning who handles what is a Team-page dropdown change, not a code change."""
+    return db.query(models.Employee).filter(
+        models.Employee.automation_role == automation_role,
+        models.Employee.is_active == True
+    ).first()
+
 def today_eod():
     return datetime.utcnow().replace(hour=18, minute=0, second=0, microsecond=0)
 
@@ -68,9 +77,62 @@ def auto_task(db, title, description, employee_id, priority, linked_lead_id=None
     db.add(task)
     return task
 
+class EmployeeCreate(BaseModel):
+    name: str
+    email: Optional[str] = None
+    role: str
+    automation_role: Optional[str] = None
+
+class EmployeeUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    role: Optional[str] = None
+    automation_role: Optional[str] = None
+    is_active: Optional[bool] = None
+
 @router.get("/employees")
 def list_employees(db: Session = Depends(get_db)):
     return db.query(models.Employee).filter(models.Employee.is_active == True).all()
+
+@router.get("/employees/all")
+def list_all_employees(db: Session = Depends(get_db)):
+    """Includes inactive employees, for the Team management page."""
+    return db.query(models.Employee).order_by(models.Employee.name).all()
+
+@router.post("/employees")
+def create_employee(payload: EmployeeCreate, db: Session = Depends(get_db)):
+    emp = models.Employee(
+        name=payload.name,
+        email=payload.email,
+        role=payload.role,
+        automation_role=payload.automation_role,
+        is_active=True,
+    )
+    db.add(emp)
+    db.commit()
+    db.refresh(emp)
+    return emp
+
+@router.patch("/employees/{employee_id}")
+def update_employee(employee_id: int, payload: EmployeeUpdate, db: Session = Depends(get_db)):
+    emp = db.query(models.Employee).filter(models.Employee.employee_id == employee_id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    for field, value in payload.dict(exclude_unset=True).items():
+        setattr(emp, field, value)
+    db.commit()
+    db.refresh(emp)
+    return emp
+
+@router.delete("/employees/{employee_id}")
+def deactivate_employee(employee_id: int, db: Session = Depends(get_db)):
+    """Soft-delete: deactivates rather than removes, so historical task records stay intact."""
+    emp = db.query(models.Employee).filter(models.Employee.employee_id == employee_id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    emp.is_active = False
+    db.commit()
+    return {"status": "deactivated"}
 
 @router.get("/")
 def list_tasks(employee_id: Optional[int] = None, status: Optional[str] = None, db: Session = Depends(get_db)):
@@ -173,11 +235,14 @@ def generate_recurring_tasks(db: Session = Depends(get_db)):
 
 @router.post("/generate-smart")
 def generate_smart_tasks(db: Session = Depends(get_db)):
-    hajira = get_emp(db, HAJIRA_NAME)
-    shanmukhi = get_emp(db, SHANMUKHI_NAME)
-    feroz = get_emp(db, FEROZ_NAME)
+    hajira = get_emp_by_role(db, ROLE_CRM_FOLLOWUP)
+    shanmukhi = get_emp_by_role(db, ROLE_BOQ_DESIGN)
+    feroz = get_emp_by_role(db, ROLE_LOGISTICS)
     if not all([hajira, shanmukhi, feroz]):
-        raise HTTPException(status_code=400, detail="Employees not found")
+        raise HTTPException(
+            status_code=400,
+            detail="No active employee assigned to one or more automation roles (crm_followup / boq_design / logistics). Assign them on the Team page."
+        )
     created = []
     now = datetime.utcnow()
     d3 = now - timedelta(days=3)

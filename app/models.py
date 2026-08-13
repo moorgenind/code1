@@ -385,6 +385,7 @@ class Employee(Base):
     name = Column(String(255), nullable=False)
     email = Column(String(255), unique=True, nullable=True)
     role = Column(String(100), nullable=False)
+    automation_role = Column(String(100), nullable=True)  # crm_followup / boq_design / logistics — drives auto-task assignment
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
