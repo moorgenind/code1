@@ -32,6 +32,87 @@ class InvoiceCreate(BaseModel):
     invoice_to: Optional[str] = "client"
     invoice_to_name: Optional[str] = None
 
+class CreditDebitNoteCreate(BaseModel):
+    note_type: str  # 'credit' or 'debit'
+    invoice_id: int
+    amount: Decimal
+    gst_amount: Optional[Decimal] = Decimal("0")
+    reason: str
+    notes: Optional[str] = None
+    created_by: Optional[str] = None
+
+
+def generate_note_code(db: Session, note_type: str) -> str:
+    from sqlalchemy import func
+    prefix = "CN" if note_type == "credit" else "DN"
+    fy = "2627"
+    pattern = f"{prefix}-{fy}-%"
+    last = db.query(func.max(models.CreditDebitNote.note_code)).filter(
+        models.CreditDebitNote.note_code.like(pattern)
+    ).scalar()
+    if last:
+        try:
+            num = int(last.split("-")[-1]) + 1
+        except:
+            num = 1
+    else:
+        num = 1
+    return f"{prefix}-{fy}-{str(num).zfill(3)}"
+
+
+@router.post("/credit-debit-notes")
+def create_credit_debit_note(payload: CreditDebitNoteCreate, db: Session = Depends(get_db)):
+    if payload.note_type not in ("credit", "debit"):
+        raise HTTPException(status_code=400, detail="note_type must be 'credit' or 'debit'")
+    invoice = db.query(models.Invoice).filter(models.Invoice.invoice_id == payload.invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    note = models.CreditDebitNote(
+        note_code=generate_note_code(db, payload.note_type),
+        note_type=payload.note_type,
+        invoice_id=payload.invoice_id,
+        lead_id=invoice.lead_id,
+        amount=payload.amount,
+        gst_amount=payload.gst_amount,
+        reason=payload.reason,
+        notes=payload.notes,
+        created_by=payload.created_by,
+    )
+    db.add(note)
+    db.commit()
+    db.refresh(note)
+    return note
+
+
+@router.get("/credit-debit-notes")
+def list_credit_debit_notes(invoice_id: Optional[int] = None, lead_id: Optional[int] = None, db: Session = Depends(get_db)):
+    query = db.query(models.CreditDebitNote)
+    if invoice_id:
+        query = query.filter(models.CreditDebitNote.invoice_id == invoice_id)
+    if lead_id:
+        query = query.filter(models.CreditDebitNote.lead_id == lead_id)
+    return query.order_by(models.CreditDebitNote.created_at.desc()).all()
+
+
+@router.get("/credit-debit-notes/{note_id}")
+def get_credit_debit_note(note_id: int, db: Session = Depends(get_db)):
+    note = db.query(models.CreditDebitNote).filter(models.CreditDebitNote.note_id == note_id).first()
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    return note
+
+
+@router.delete("/credit-debit-notes/{note_id}")
+def delete_credit_debit_note(note_id: int, db: Session = Depends(get_db)):
+    note = db.query(models.CreditDebitNote).filter(models.CreditDebitNote.note_id == note_id).first()
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    db.delete(note)
+    db.commit()
+    return {"status": "deleted"}
+
+
 class PaymentCreate(BaseModel):
     payment_type: str
     amount: Decimal

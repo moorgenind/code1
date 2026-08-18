@@ -247,6 +247,23 @@ class InvoiceLineItem(Base):
     line_total = Column(Numeric(14,2))
     invoice = relationship("Invoice", back_populates="line_items")
 
+class CreditDebitNote(Base):
+    __tablename__ = "credit_debit_notes"
+    note_id = Column(Integer, primary_key=True, index=True)
+    note_code = Column(String(50), unique=True, nullable=False)  # CN-2627-001 / DN-2627-001
+    note_type = Column(String(10), nullable=False)  # 'credit' or 'debit'
+    invoice_id = Column(Integer, ForeignKey("invoices.invoice_id"), nullable=False)
+    lead_id = Column(Integer, ForeignKey("leads.lead_id"), nullable=True)
+    amount = Column(Numeric(14, 2), nullable=False)
+    gst_amount = Column(Numeric(14, 2), default=0)
+    reason = Column(String(100), nullable=False)  # discount / return / price_revision / additional_charge / other
+    notes = Column(Text, nullable=True)
+    created_by = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    invoice = relationship("Invoice")
+
+
 class PurchaseOrder(Base):
     __tablename__ = "purchase_orders"
     po_id = Column(Integer, primary_key=True, index=True)
