@@ -750,6 +750,7 @@ def export_invoice_to_sheets(invoice_id: int, dealer_key: str = "", db: Session 
             float(item.unit_price or 0),
             float(item.discount_pct or 0),
             float(item.line_total or 0),
+            item.hsn_code or "",
         ])
 
     total_row = data_start + len(rows)
@@ -773,7 +774,7 @@ def export_invoice_to_sheets(invoice_id: int, dealer_key: str = "", db: Session 
         [bill_addr, "", "", "", "", "", "", "", "", ""],                                 # Row 9
         [f"GSTIN: {bill_gstin}" if bill_gstin else "", "", "", "", "", "", "Project:", proj_name, "", ""], # Row 10
         ["", "", "", "", "", "", "", "", "", ""],                                        # Row 11 spacer
-        ["S.No.", "Product / Description", "SKU", "Unit", "Qty", "Unit Price (₹)", "Disc %", "Amount (₹)", "", ""],  # Row 12 header
+        ["S.No.", "Product / Description", "SKU", "Unit", "Qty", "Unit Price (₹)", "Disc %", "Amount (₹)", "HSN", ""],  # Row 12 header
     ] + rows + [
         ["", "", "", "", "", "", "Subtotal", f"₹{subtotal:,.2f}", "", ""],
         ["", "", "", "", "", "", f"Discount ({invoice.discount_pct or 0}%)", f"-₹{discount_amt:,.2f}", "", ""] if discount_amt > 0 else ["", "", "", "", "", "", "", "", "", ""],
