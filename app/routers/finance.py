@@ -133,8 +133,14 @@ def create_invoice(payload: InvoiceCreate, db: Session = Depends(get_db)):
     db.add(invoice)
     db.flush()
     for item in payload.line_items:
+        hsn = None
+        if item.sku:
+            product = db.query(models.Product).filter(models.Product.sku == item.sku).first()
+            if product:
+                hsn = product.hsn_code
         db.add(models.InvoiceLineItem(
             invoice_id=invoice.invoice_id, sku=item.sku, product_name=item.product_name,
+            hsn_code=hsn,
             quantity=item.quantity, unit_price=item.unit_price,
             discount_pct=item.discount_pct, line_total=item.line_total,
         ))
