@@ -264,6 +264,38 @@ class CreditDebitNote(Base):
     invoice = relationship("Invoice")
 
 
+class DeliveryChallan(Base):
+    __tablename__ = "delivery_challans"
+    dc_id = Column(Integer, primary_key=True, index=True)
+    dc_code = Column(String(50), unique=True, nullable=False)  # DC-2627-001
+    lead_id = Column(Integer, ForeignKey("leads.lead_id"), nullable=True)
+    shipment_id = Column(Integer, ForeignKey("shipments.id"), nullable=True)
+    from_location = Column(String(255), nullable=True)
+    to_location = Column(String(255), nullable=True)
+    purpose = Column(String(50), nullable=False, default="stock_transfer")  # stock_transfer / approval / job_work / other
+    vehicle_number = Column(String(50), nullable=True)
+    transporter = Column(String(255), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_by = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    line_items = relationship("DeliveryChallanLineItem", back_populates="dc")
+
+
+class DeliveryChallanLineItem(Base):
+    __tablename__ = "delivery_challan_line_items"
+    id = Column(Integer, primary_key=True, index=True)
+    dc_id = Column(Integer, ForeignKey("delivery_challans.dc_id"))
+    sku = Column(String(100), nullable=True)
+    product_name = Column(String(255), nullable=True)
+    hsn_code = Column(String(20), nullable=True)
+    quantity = Column(Integer, nullable=False)
+    unit = Column(String(20), default="pcs")
+    approx_value = Column(Numeric(14, 2), nullable=True)  # for e-way bill threshold reference, not a sale price
+
+    dc = relationship("DeliveryChallan", back_populates="line_items")
+
+
 class PurchaseOrder(Base):
     __tablename__ = "purchase_orders"
     po_id = Column(Integer, primary_key=True, index=True)

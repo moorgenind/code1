@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine
 from app import models
-from app.routers import leads, boqs, design, products, dealers, dealer_portal, auth, finance, inventory, projects, logistics, export, tasks, lightforge_portal, dealer_auth, dashboard
+from app.routers import leads, boqs, design, products, dealers, dealer_portal, auth, finance, inventory, projects, logistics, export, tasks, lightforge_portal, dealer_auth, dashboard, delivery_challan
 
 load_dotenv()
 
@@ -46,3 +46,4 @@ app.include_router(logistics.router, prefix="/logistics", tags=["Logistics"])
 app.include_router(export.router, prefix="/export", tags=["Export"])
 app.include_router(tasks.router, prefix="/tasks", tags=["Tasks"])
 app.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
+app.include_router(delivery_challan.router, prefix="/delivery-challans", tags=["Delivery Challans"])
