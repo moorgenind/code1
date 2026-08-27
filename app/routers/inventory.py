@@ -81,6 +81,12 @@ def inventory_dashboard(db: Session = Depends(get_db), role: str = Depends(get_r
         lead = db.query(models.Lead).filter(models.Lead.lead_id == po.lead_id).first()
         total = sum(float(i.line_total) for i in po.line_items)
         dealer = db.query(models.Dealer).filter(models.Dealer.dealer_id == lead.dealer_id).first() if lead and lead.dealer_id else None
+
+        # Collect distinct projects across this PO's line items (falls back to the PO-level lead if an item has no override)
+        item_lead_ids = {i.lead_id for i in po.line_items if i.lead_id} or ({po.lead_id} if po.lead_id else set())
+        item_leads = db.query(models.Lead).filter(models.Lead.lead_id.in_(item_lead_ids)).all() if item_lead_ids else []
+        projects = [{"lead_id": l.lead_id, "client_name": l.client_name, "project_name": l.project_name} for l in item_leads]
+
         po_list.append({
             "po_id": po.po_id,
             "po_code": po.po_code,
@@ -89,6 +95,7 @@ def inventory_dashboard(db: Session = Depends(get_db), role: str = Depends(get_r
             "project_name": lead.project_name if lead else None,
             "city": lead.city if lead else None,
             "dealer_name": dealer.firm_name if dealer else None,
+            "projects": projects,
             "status": po.status,
             "total": (None if hide_pricing else total),
             "items_count": len(po.line_items),
@@ -103,6 +110,7 @@ def inventory_dashboard(db: Session = Depends(get_db), role: str = Depends(get_r
                     "product_name": i.product_name,
                     "quantity_ordered": i.quantity_ordered,
                     "quantity_received": i.quantity_received,
+                    "lead_id": i.lead_id,
                     **({} if hide_pricing else {"unit_cost": float(i.unit_cost), "line_total": float(i.line_total)}),
                     "supplier": i.supplier or "Moorgen",
                 }
@@ -967,6 +975,16 @@ def delete_stock(sku: str, db: Session = Depends(get_db)):
     db.delete(stock)
     db.commit()
     return {"success": True}
+
+@router.patch("/po-line-items/{item_id}/project")
+def assign_line_item_project(item_id: int, lead_id: Optional[int] = None, db: Session = Depends(get_db)):
+    item = db.query(models.POLineItem).filter(models.POLineItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Line item not found")
+    item.lead_id = lead_id
+    db.commit()
+    return {"success": True}
+
 
 @router.patch("/purchase-orders/{po_id}/notes")
 def update_po_notes(po_id: int, notes: str, db: Session = Depends(get_db)):

@@ -320,6 +320,7 @@ class POLineItem(Base):
     supplier = Column(String(255), default="Moorgen")
     unit_cost = Column(Numeric(14,2))
     line_total = Column(Numeric(14,2))
+    lead_id = Column(Integer, ForeignKey("leads.lead_id"), nullable=True)  # overrides PO-level project for this specific item — lets one PO cover multiple projects
     po = relationship("PurchaseOrder", back_populates="line_items")
 
 class Stock(Base):
