@@ -80,12 +80,15 @@ def inventory_dashboard(db: Session = Depends(get_db), role: str = Depends(get_r
     for po in pos:
         lead = db.query(models.Lead).filter(models.Lead.lead_id == po.lead_id).first()
         total = sum(float(i.line_total) for i in po.line_items)
+        dealer = db.query(models.Dealer).filter(models.Dealer.dealer_id == lead.dealer_id).first() if lead and lead.dealer_id else None
         po_list.append({
             "po_id": po.po_id,
             "po_code": po.po_code,
             "lead_id": po.lead_id,
             "client_name": lead.client_name if lead else None,
             "project_name": lead.project_name if lead else None,
+            "city": lead.city if lead else None,
+            "dealer_name": dealer.firm_name if dealer else None,
             "status": po.status,
             "total": (None if hide_pricing else total),
             "items_count": len(po.line_items),
