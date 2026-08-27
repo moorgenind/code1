@@ -321,7 +321,8 @@ class POLineItem(Base):
     unit_cost = Column(Numeric(14,2))
     line_total = Column(Numeric(14,2))
     lead_id = Column(Integer, ForeignKey("leads.lead_id"), nullable=True)  # overrides PO-level project for this specific item — lets one PO cover multiple projects
-    is_sample = Column(Boolean, default=False)  # marks this item as a sample order, not tied to a client project
+    is_sample = Column(Boolean, default=False)  # deprecated, kept for backward compat — use allocation_type
+    allocation_type = Column(String(20), default="stock")  # stock / sample / project — what this line item is destined for
     po = relationship("PurchaseOrder", back_populates="line_items")
 
 class Stock(Base):

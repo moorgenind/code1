@@ -111,7 +111,7 @@ def inventory_dashboard(db: Session = Depends(get_db), role: str = Depends(get_r
                     "quantity_ordered": i.quantity_ordered,
                     "quantity_received": i.quantity_received,
                     "lead_id": i.lead_id,
-                    "is_sample": i.is_sample or False,
+                    "allocation_type": i.allocation_type or "stock",
                     **({} if hide_pricing else {"unit_cost": float(i.unit_cost), "line_total": float(i.line_total)}),
                     "supplier": i.supplier or "Moorgen",
                 }
@@ -978,15 +978,25 @@ def delete_stock(sku: str, db: Session = Depends(get_db)):
     return {"success": True}
 
 @router.patch("/po-line-items/{item_id}/project")
-def assign_line_item_project(item_id: int, lead_id: Optional[int] = None, is_sample: Optional[bool] = None, db: Session = Depends(get_db)):
+def assign_line_item_project(item_id: int, lead_id: Optional[int] = None, allocation_type: Optional[str] = None, db: Session = Depends(get_db)):
     item = db.query(models.POLineItem).filter(models.POLineItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Line item not found")
-    item.lead_id = lead_id
-    if is_sample is not None:
-        item.is_sample = is_sample
-        if is_sample:
-            item.lead_id = None
+
+    if allocation_type == "project":
+        item.allocation_type = "project"
+        item.lead_id = lead_id
+    elif allocation_type == "sample":
+        item.allocation_type = "sample"
+        item.lead_id = None
+    elif allocation_type == "stock":
+        item.allocation_type = "stock"
+        item.lead_id = None
+    elif lead_id is not None:
+        # backward-compat: assigning a lead_id directly implies project allocation
+        item.allocation_type = "project"
+        item.lead_id = lead_id
+
     db.commit()
     return {"success": True}
 
