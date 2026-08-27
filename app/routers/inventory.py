@@ -612,6 +612,9 @@ def get_project_needs(db: Session = Depends(get_db)):
     # Stock map
     stock_rows = db.execute(text("SELECT sku, quantity_on_hand, quantity_reserved FROM stock")).fetchall()
     stock_map = {r.sku: {'on_hand': r.quantity_on_hand, 'reserved': r.quantity_reserved, 'available': r.quantity_on_hand - r.quantity_reserved} for r in stock_rows}
+    # LightForge stock counts as an additional available pool for covering project needs
+    lf_rows = db.execute(text("SELECT sku, SUM(quantity) as qty FROM lf_stock GROUP BY sku")).fetchall()
+    lf_map = {r.sku: int(r.qty) for r in lf_rows}
 
     # Incoming map (ordered + in_transit POs)
     incoming_rows = db.execute(text("""
@@ -704,7 +707,8 @@ def get_project_needs(db: Session = Depends(get_db)):
 
     for sku, lead_ids in sku_demand.items():
         stock = stock_map.get(sku, {'on_hand': 0, 'reserved': 0, 'available': 0})
-        pool = stock['available']
+        lf_available = lf_map.get(sku, 0)
+        pool = stock['available'] + lf_available
         incoming = incoming_map.get(sku, 0)
 
         competitors = []
@@ -781,6 +785,7 @@ def get_project_needs(db: Session = Depends(get_db)):
             sku = item['sku']
             needed = item['needed']
             stock = stock_map.get(sku, {'on_hand': 0, 'reserved': 0, 'available': 0})
+            lf_available = lf_map.get(sku, 0)
             already_assigned = assignment_map.get((sku, lead.lead_id), 0)
             already_dispatched = dispatched_map.get((sku, lead.lead_id), 0)
             incoming = incoming_map.get(sku, 0)
@@ -788,7 +793,7 @@ def get_project_needs(db: Session = Depends(get_db)):
             # Dispatched items count as fully covered
             if already_dispatched >= needed:
                 needs.append({'sku': sku, 'product_name': item['product_name'], 'needed': needed,
-                              'in_stock': stock['on_hand'], 'available': stock['available'],
+                              'in_stock': stock['on_hand'], 'available': stock['available'], 'lf_available': lf_available,
                               'incoming': incoming, 'assigned': already_assigned,
                               'can_cover': needed, 'gap': 0, 'status': 'covered'})
                 fully_covered += 1
@@ -822,6 +827,7 @@ def get_project_needs(db: Session = Depends(get_db)):
                 'needed': needed,
                 'in_stock': stock['on_hand'],
                 'available': stock['available'],
+                'lf_available': lf_available,
                 'incoming': incoming,
                 'assigned': already_assigned,
                 'can_cover': can_cover,
