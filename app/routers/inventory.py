@@ -1001,6 +1001,21 @@ def assign_line_item_project(item_id: int, lead_id: Optional[int] = None, alloca
     return {"success": True}
 
 
+@router.post("/purchase-orders/{po_id}/apply-project-to-all")
+def apply_project_to_all_items(po_id: int, lead_id: int, db: Session = Depends(get_db)):
+    """Bulk-assign a project to every line item in a PO that's still unassigned (stock).
+    Items already marked sample or tied to a different project are left untouched."""
+    items = db.query(models.POLineItem).filter(
+        models.POLineItem.po_id == po_id,
+        models.POLineItem.allocation_type == "stock"
+    ).all()
+    for item in items:
+        item.allocation_type = "project"
+        item.lead_id = lead_id
+    db.commit()
+    return {"updated": len(items)}
+
+
 @router.patch("/purchase-orders/{po_id}/notes")
 def update_po_notes(po_id: int, notes: str, db: Session = Depends(get_db)):
     po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.po_id == po_id).first()
