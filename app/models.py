@@ -422,6 +422,7 @@ class Shipment(Base):
     driver_name = Column(String(255), nullable=True)
     driver_phone = Column(String(50), nullable=True)
     notes = Column(Text, nullable=True)
+    shipment_type = Column(String(20), default="regular")  # regular / sample / return
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

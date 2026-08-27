@@ -10,6 +10,7 @@ router = APIRouter()
 
 class ShipmentCreate(BaseModel):
     direction: str  # inbound / outbound
+    shipment_type: Optional[str] = "regular"  # regular / sample / return
     po_id: Optional[int] = None
     lead_id: Optional[int] = None
     from_location: Optional[str] = None
@@ -22,7 +23,14 @@ class ShipmentCreate(BaseModel):
     notes: Optional[str] = None
 
 class ShipmentUpdate(BaseModel):
+    direction: Optional[str] = None
+    shipment_type: Optional[str] = None
     status: Optional[str] = None
+    po_id: Optional[int] = None
+    lead_id: Optional[int] = None
+    from_location: Optional[str] = None
+    to_location: Optional[str] = None
+    expected_date: Optional[date] = None
     actual_date: Optional[date] = None
     carrier: Optional[str] = None
     tracking_number: Optional[str] = None
@@ -46,9 +54,13 @@ def list_shipments(db: Session = Depends(get_db)):
             "id": s.id,
             "shipment_code": s.shipment_code,
             "direction": s.direction,
+            "shipment_type": s.shipment_type or "regular",
+            "po_id": s.po_id,
+            "lead_id": s.lead_id,
             "po_code": po.po_code if po else None,
             "client_name": lead.client_name if lead else None,
             "project_name": lead.project_name if lead else None,
+            "city": lead.city if lead else None,
             "from_location": s.from_location,
             "to_location": s.to_location,
             "carrier": s.carrier,
@@ -68,6 +80,7 @@ def create_shipment(payload: ShipmentCreate, db: Session = Depends(get_db)):
     shipment = models.Shipment(
         shipment_code=generate_shipment_code(db, payload.direction),
         direction=payload.direction,
+        shipment_type=payload.shipment_type or "regular",
         po_id=payload.po_id,
         lead_id=payload.lead_id,
         from_location=payload.from_location,
@@ -89,7 +102,7 @@ def update_shipment(shipment_id: int, payload: ShipmentUpdate, db: Session = Dep
     shipment = db.query(models.Shipment).filter(models.Shipment.id == shipment_id).first()
     if not shipment:
         raise HTTPException(status_code=404, detail="Shipment not found")
-    for field, value in payload.dict(exclude_none=True).items():
+    for field, value in payload.dict(exclude_unset=True).items():
         setattr(shipment, field, value)
     db.commit()
     return {"success": True}
