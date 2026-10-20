@@ -81,6 +81,10 @@ def score_lead(lead, architect_rank=None, has_architect=False):
     score = sum(parts.values())
     if not filled:
         return None, None, parts
+    # A letter grade needs at least one human-confirmed timing signal; otherwise a lead
+    # backfilled from BOQ/name data would be graded D purely for missing information.
+    if not (lead.construction_stage or lead.purchase_timeline):
+        return score, None, parts
     grade = next(g for cutoff, g in GRADE_CUTOFFS if score >= cutoff)
     return score, grade, parts
 

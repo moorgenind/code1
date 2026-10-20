@@ -149,6 +149,176 @@ def lead_insights(lead_id: int, db: Session = Depends(get_db)):
     }
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# One-off backfill of qualification fields from data already in the system.
+# Only fills BLANK fields — never overwrites anything someone typed.
+# ═════════════════════════════════════════════════════════════════════════════
+CITY_STATE = {
+    "hyderabad": "Telangana", "secunderabad": "Telangana", "warangal": "Telangana", "karimnagar": "Telangana",
+    "vijayawada": "Andhra Pradesh", "visakhapatnam": "Andhra Pradesh", "vizag": "Andhra Pradesh", "guntur": "Andhra Pradesh",
+    "nellore": "Andhra Pradesh", "tirupati": "Andhra Pradesh", "rajahmundry": "Andhra Pradesh", "kakinada": "Andhra Pradesh",
+    "bangalore": "Karnataka", "bengaluru": "Karnataka", "mysore": "Karnataka", "mysuru": "Karnataka", "mangalore": "Karnataka",
+    "chennai": "Tamil Nadu", "coimbatore": "Tamil Nadu", "madurai": "Tamil Nadu",
+    "mumbai": "Maharashtra", "pune": "Maharashtra", "nagpur": "Maharashtra", "nashik": "Maharashtra", "thane": "Maharashtra",
+    "delhi": "Delhi", "new delhi": "Delhi", "gurgaon": "Haryana", "gurugram": "Haryana", "faridabad": "Haryana",
+    "noida": "Uttar Pradesh", "lucknow": "Uttar Pradesh", "ghaziabad": "Uttar Pradesh",
+    "ahmedabad": "Gujarat", "surat": "Gujarat", "vadodara": "Gujarat", "rajkot": "Gujarat",
+    "kolkata": "West Bengal", "jaipur": "Rajasthan", "udaipur": "Rajasthan", "chandigarh": "Chandigarh",
+    "ludhiana": "Punjab", "amritsar": "Punjab", "kochi": "Kerala", "cochin": "Kerala", "trivandrum": "Kerala",
+    "goa": "Goa", "panaji": "Goa", "indore": "Madhya Pradesh", "bhopal": "Madhya Pradesh", "raipur": "Chhattisgarh",
+    "bhubaneswar": "Odisha", "patna": "Bihar", "dehradun": "Uttarakhand",
+}
+PROPERTY_KEYWORDS = [  # first match wins; checked against project + client name
+    ("penthouse", "penthouse"), ("farm", "farmhouse"), ("villa", "villa"),
+    ("apartment", "apartment"), ("apts", "apartment"), ("flat", "apartment"), ("tower", "apartment"),
+    ("hotel", "hospitality"), ("resort", "hospitality"), ("restaurant", "hospitality"), ("cafe", "hospitality"),
+    ("café", "hospitality"), ("club", "hospitality"), ("bar ", "hospitality"), ("spa", "hospitality"),
+    ("showroom", "showroom"), ("experience centre", "showroom"), ("experience center", "showroom"), ("store", "showroom"),
+    ("office", "office"), ("corporate", "office"), ("hq", "office"),
+    ("mall", "commercial"), ("retail", "commercial"), ("hospital", "institutional"), ("school", "institutional"),
+    ("college", "institutional"),
+]
+BOQ_CAT_TO_INTEREST = {"architectural": "architectural", "exterior": "architectural", "decorative": "decorative",
+                       "automation": "automation", "smart_locks": "automation", "oem": "oem"}
+LEGACY_SOURCE = {"dealer": "dealer_generated", "walkin": "walk_in", "walk-in": "walk_in", "insta": "instagram"}
+
+
+def _budget_band(v):
+    if not v:
+        return None
+    if v < 1_000_000: return "5_10L"
+    if v < 2_500_000: return "10_25L"
+    if v < 5_000_000: return "25_50L"
+    if v < 10_000_000: return "50L_1Cr"
+    return "1Cr_plus"
+
+
+def _match_employee(name, emps):
+    n = (name or "").strip().lower()
+    if not n:
+        return None
+    exact = [e for e in emps if e.name.strip().lower() == n]
+    if len(exact) == 1:
+        return exact[0]
+    first = n.split()[0]
+    hits = [e for e in emps if e.name.strip().lower().split()[0] == first]
+    return hits[0] if len(hits) == 1 else None
+
+
+@router.post("/backfill")
+def backfill_leads(apply: bool = False, request: Request = None, db: Session = Depends(get_db)):
+    """Preview (apply=false) or apply qualification backfill for every lead."""
+    if apply and request is not None and not is_approver(request):
+        raise HTTPException(403, "Only admins can apply the backfill")
+    leads = db.query(models.Lead).all()
+    emps = db.query(models.Employee).filter(models.Employee.is_active == True).all()
+    boqs = db.query(models.Boq.lead_id, models.Boq.category, models.Boq.total_amount, models.Boq.version).all()
+    cats, totals = {}, {}
+    latest = {}
+    for lead_id, cat, total, ver in boqs:
+        if cat in BOQ_CAT_TO_INTEREST:
+            cats.setdefault(lead_id, set()).add(BOQ_CAT_TO_INTEREST[cat])
+        key = (lead_id, cat)
+        if key not in latest or (ver or 0) > latest[key][0]:
+            latest[key] = (ver or 0, float(total or 0))
+    for (lead_id, _), (_, t) in latest.items():
+        totals[lead_id] = totals.get(lead_id, 0) + t
+    tracking = {t.lead_id: t for t in db.query(models.ProjectTracking).filter(models.ProjectTracking.architect_name != None).all()}
+    archs = {a.firm_name.strip().lower(): a for a in db.query(models.Architect).all()}
+
+    counts = {k: 0 for k in ["product_interest", "owner_employee_id", "lead_source", "attribution_type", "state",
+                             "property_type", "budget_range", "architect_id", "dealer_acceptance", "architects_created"]}
+    samples, unmatched_owners = [], {}
+    new_arch = 0
+    changed = 0
+    for l in leads:
+        ch = {}
+        if not l.product_interest:
+            interest = set(cats.get(l.lead_id, set()))
+            if l.category in BOQ_CAT_TO_INTEREST:
+                interest.add(BOQ_CAT_TO_INTEREST[l.category])
+            if interest:
+                ch["product_interest"] = sorted(interest)
+        if not l.owner_employee_id and l.assigned_to:
+            e = _match_employee(l.assigned_to, emps)
+            if e:
+                ch["owner_employee_id"] = e.employee_id
+            else:
+                unmatched_owners[l.assigned_to] = unmatched_owners.get(l.assigned_to, 0) + 1
+        src = (l.lead_source or "").strip().lower()
+        if src in LEGACY_SOURCE:
+            ch["lead_source"] = LEGACY_SOURCE[src]
+        elif not src and l.dealer_id and l.channel in ("dealer", "flagship_dealer"):
+            ch["lead_source"] = "dealer_generated"
+        if not l.attribution_type:
+            is_dealer = l.dealer_id and (l.channel in ("dealer", "flagship_dealer") or src in ("dealer", "dealer_generated") or l.locked_by_dealer_id)
+            ch["attribution_type"] = "dealer" if is_dealer else "company"
+        if not l.state and l.city:
+            st = CITY_STATE.get(l.city.strip().lower())
+            if st:
+                ch["state"] = st
+        if not l.property_type:
+            text_ = f" {(l.project_name or '')} {(l.client_name or '')} ".lower()
+            for kw, pt in PROPERTY_KEYWORDS:
+                if kw in text_:
+                    ch["property_type"] = pt
+                    break
+        if not l.budget_range and totals.get(l.lead_id):
+            ch["budget_range"] = _budget_band(totals[l.lead_id])
+        if not l.architect_id and l.lead_id in tracking:
+            name = (tracking[l.lead_id].architect_name or "").strip()
+            if name:
+                a = archs.get(name.lower())
+                if not a and apply:
+                    a = models.Architect(firm_name=name, phone=tracking[l.lead_id].architect_phone, city=l.city,
+                                         partner_type="architect", is_active=True)
+                    db.add(a); db.flush()
+                    archs[name.lower()] = a
+                    new_arch += 1
+                elif not a:
+                    archs[name.lower()] = None  # count once in preview
+                    new_arch += 1
+                ch["architect_id"] = a.architect_id if a else f"(new) {name}"
+        if l.dealer_id and not l.dealer_acceptance:
+            ch["dealer_acceptance"] = "accepted"  # pre-existing dealer leads count as accepted
+        if not ch:
+            continue
+        changed += 1
+        for k in ch:
+            counts[k] += 1
+        if len(samples) < 40:
+            shown = dict(ch)
+            if "owner_employee_id" in shown:
+                shown["owner_employee_id"] = next((e.name for e in emps if e.employee_id == ch["owner_employee_id"]), ch["owner_employee_id"])
+            samples.append({"lead_id": l.lead_id, "lead_code": l.lead_code, "project_name": l.project_name, "changes": shown})
+        if apply:
+            for k, v in ch.items():
+                if k == "architect_id" and not isinstance(v, int):
+                    continue
+                setattr(l, k, v)
+            if "dealer_acceptance" in ch and not l.dealer_assigned_at:
+                l.dealer_assigned_at = l.created_at
+                l.dealer_responded_at = l.created_at
+    counts["architects_created"] = new_arch
+    grades = None
+    if apply:
+        db.flush()
+        for l in leads:
+            rescore(db, l)
+            if l.lead_grade and not l.qualified_at:
+                l.qualified_at = L.now_utc()
+        db.commit()
+        grades = {}
+        for l in leads:
+            grades[l.lead_grade or "unscored"] = grades.get(l.lead_grade or "unscored", 0) + 1
+    return {
+        "applied": apply, "leads_total": len(leads), "leads_changed": changed,
+        "field_counts": counts, "samples": samples, "grades_after": grades,
+        "unmatched_owners": sorted([{"assigned_to": k, "leads": v} for k, v in unmatched_owners.items()], key=lambda x: -x["leads"]),
+        "cannot_infer": ["construction_stage", "purchase_timeline", "expected_order_date"],
+    }
+
+
 @router.post("/rescore")
 def rescore_all(db: Session = Depends(get_db)):
     leads = db.query(models.Lead).all()
