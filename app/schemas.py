@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
 
 
@@ -76,6 +76,25 @@ class LeadCreate(BaseModel):
     client_address: Optional[str] = None
     created_at: Optional[str] = None
 
+    # CRM upgrade — qualification & attribution (all optional)
+    attribution_type: Optional[str] = None
+    owner_employee_id: Optional[int] = None
+    source_employee_id: Optional[int] = None
+    architect_id: Optional[int] = None
+    builder_name: Optional[str] = None
+    state: Optional[str] = None
+    pincode: Optional[str] = None
+    project_location: Optional[str] = None
+    budget_range: Optional[str] = None
+    property_type: Optional[str] = None
+    property_size_sqft: Optional[int] = None
+    construction_stage: Optional[str] = None
+    expected_possession_date: Optional[date] = None
+    purchase_timeline: Optional[str] = None
+    product_interest: Optional[List[str]] = None
+    estimated_value: Optional[float] = None
+    expected_order_date: Optional[date] = None
+
     # Scope flags — determines what BOQs and design requests get created
     arch_lighting: bool = False
     decorative_lighting: bool = False
@@ -87,6 +106,8 @@ class LeadCreate(BaseModel):
 class LeadStatusUpdate(BaseModel):
     status: str
     lost_reason: Optional[str] = None
+    note: Optional[str] = None          # activity note — required if the lead had no recent activity
+    performed_by: Optional[str] = None
 
 
 class LeadResponse(BaseModel):
@@ -116,6 +137,30 @@ class LeadResponse(BaseModel):
     locked_at: Optional[datetime] = None
     lock_expires_at: Optional[datetime] = None
     dealer_notes: Optional[str] = None
+    # CRM upgrade
+    attribution_type: Optional[str] = None
+    owner_employee_id: Optional[int] = None
+    source_employee_id: Optional[int] = None
+    architect_id: Optional[int] = None
+    builder_name: Optional[str] = None
+    state: Optional[str] = None
+    pincode: Optional[str] = None
+    project_location: Optional[str] = None
+    budget_range: Optional[str] = None
+    property_type: Optional[str] = None
+    property_size_sqft: Optional[int] = None
+    construction_stage: Optional[str] = None
+    expected_possession_date: Optional[date] = None
+    purchase_timeline: Optional[str] = None
+    product_interest: Optional[List[str]] = None
+    lead_score: Optional[int] = None
+    lead_grade: Optional[str] = None
+    estimated_value: Optional[float] = None
+    win_probability: Optional[int] = None
+    expected_order_date: Optional[date] = None
+    last_activity_at: Optional[datetime] = None
+    dealer_acceptance: Optional[str] = None
+    dealer_assigned_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

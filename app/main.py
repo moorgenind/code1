@@ -4,10 +4,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine
 from app import models
 from app.routers import leads, boqs, design, products, dealers, dealer_portal, auth, finance, inventory, projects, logistics, export, tasks, lightforge_portal, dealer_auth, dashboard, delivery_challan
+from app.routers import crm, architects, aftersales, crm_dashboard
+from app import crm_migrations
 
 load_dotenv()
 
 models.Base.metadata.create_all(bind=engine)
+# Add new CRM columns to existing tables (idempotent; create_all never alters tables)
+crm_migrations.run(engine, verbose=True)
 
 app = FastAPI(title="Morgan Innovations", version="2.0")
 
@@ -47,3 +51,7 @@ app.include_router(export.router, prefix="/export", tags=["Export"])
 app.include_router(tasks.router, prefix="/tasks", tags=["Tasks"])
 app.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
 app.include_router(delivery_challan.router, prefix="/delivery-challans", tags=["Delivery Challans"])
+app.include_router(crm.router, prefix="/crm", tags=["CRM"])
+app.include_router(architects.router, prefix="/architects", tags=["Architects"])
+app.include_router(aftersales.router, prefix="/aftersales", tags=["After-sales"])
+app.include_router(crm_dashboard.router, prefix="/crm-dashboard", tags=["CRM Dashboards"])

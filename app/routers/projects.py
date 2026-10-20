@@ -42,6 +42,11 @@ class TrackingUpdate(BaseModel):
     expected_delivery: Optional[date] = None
     actual_delivery: Optional[date] = None
     delivery_notes: Optional[str] = None
+    commissioning_date: Optional[date] = None
+    client_training_date: Optional[date] = None
+    signoff_date: Optional[date] = None
+    signed_off_by: Optional[str] = None
+    signoff_doc_url: Optional[str] = None
 
 class SnagCreate(BaseModel):
     description: str
@@ -98,6 +103,11 @@ def tracking_to_dict(t):
         "expected_delivery": t.expected_delivery.isoformat() if t.expected_delivery else None,
         "actual_delivery": t.actual_delivery.isoformat() if t.actual_delivery else None,
         "delivery_notes": t.delivery_notes,
+        "commissioning_date": t.commissioning_date.isoformat() if t.commissioning_date else None,
+        "client_training_date": t.client_training_date.isoformat() if t.client_training_date else None,
+        "signoff_date": t.signoff_date.isoformat() if t.signoff_date else None,
+        "signed_off_by": t.signed_off_by,
+        "signoff_doc_url": t.signoff_doc_url,
     }
 
 @router.get("/")

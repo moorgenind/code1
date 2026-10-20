@@ -1,7 +1,7 @@
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy import (
     Column, Integer, String, Numeric, Boolean, Float,
-    Text, DateTime, ForeignKey
+    Text, DateTime, Date, ForeignKey
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -30,6 +30,19 @@ class Dealer(Base):
     portal_token = Column(String(255), unique=True, nullable=True)
     special_discount_pct = Column(Float, default=50.0)
     gstin = Column(String(50), nullable=True)
+    # ── CRM upgrade: dealer operating model ──
+    region = Column(String(100), nullable=True)                 # South / West / North / East
+    classification = Column(String(50), nullable=True)          # certified_execution / supported / referral_partner
+    lifecycle_stage = Column(String(50), nullable=True, default="active")  # prospect/evaluation/training/certification/onboarding/active/review/renewal/inactive
+    certified_categories = Column(ARRAY(String), nullable=True) # architectural / decorative / automation / oem
+    capabilities = Column(ARRAY(String), nullable=True)         # sales / design / installation / commissioning / service / amc / electrical / automation / networking
+    territory_cities = Column(ARRAY(String), nullable=True)
+    training_score = Column(Integer, nullable=True)             # 0-100, manual
+    installation_score = Column(Integer, nullable=True)         # 0-100, manual
+    service_score = Column(Integer, nullable=True)              # 0-100, manual (used when no tickets yet)
+    agreement_start = Column(Date, nullable=True)
+    agreement_end = Column(Date, nullable=True)
+    crm_notes = Column(Text, nullable=True)
 
     clients = relationship("Client", back_populates="dealer")
     leads = relationship("Lead", back_populates="dealer", foreign_keys="[Lead.dealer_id]")
@@ -126,6 +139,40 @@ class Lead(Base):
     locked_at = Column(DateTime(timezone=True), nullable=True)
     lock_expires_at = Column(DateTime(timezone=True), nullable=True)
     dealer_notes = Column(Text, nullable=True)
+    # ── CRM upgrade: attribution ──
+    attribution_type = Column(String(30), nullable=True)        # company / employee / dealer
+    owner_employee_id = Column(Integer, ForeignKey("employees.employee_id"), nullable=True)   # accountable lead owner
+    source_employee_id = Column(Integer, ForeignKey("employees.employee_id"), nullable=True)  # originating employee
+    architect_id = Column(Integer, ForeignKey("architects.architect_id"), nullable=True)
+    builder_name = Column(String(255), nullable=True)
+    # ── geography / property ──
+    state = Column(String(100), nullable=True)
+    pincode = Column(String(10), nullable=True)
+    project_location = Column(Text, nullable=True)
+    budget_range = Column(String(30), nullable=True)            # 5_10L / 10_25L / 25_50L / 50L_1Cr / 1Cr_plus
+    property_type = Column(String(50), nullable=True)
+    property_size_sqft = Column(Integer, nullable=True)
+    construction_stage = Column(String(50), nullable=True)
+    expected_possession_date = Column(Date, nullable=True)
+    purchase_timeline = Column(String(30), nullable=True)       # immediate / 1m / 3m / 6m / 12m / 24m
+    product_interest = Column(ARRAY(String), nullable=True)     # architectural / decorative / automation / oem
+    # ── scoring / pipeline ──
+    lead_score = Column(Integer, nullable=True)
+    lead_grade = Column(String(2), nullable=True)               # A / B / C / D
+    estimated_value = Column(Numeric(14, 2), nullable=True)
+    win_probability = Column(Integer, nullable=True)            # manual override, else derived from status
+    expected_order_date = Column(Date, nullable=True)
+    qualified_at = Column(DateTime(timezone=True), nullable=True)
+    last_activity_at = Column(DateTime(timezone=True), nullable=True)
+    status_changed_at = Column(DateTime(timezone=True), nullable=True)
+    # ── dealer assignment ──
+    dealer_assigned_at = Column(DateTime(timezone=True), nullable=True)
+    dealer_assigned_by = Column(String(255), nullable=True)
+    dealer_assignment_reason = Column(Text, nullable=True)
+    dealer_acceptance = Column(String(20), nullable=True)       # pending / accepted / rejected
+    dealer_responded_at = Column(DateTime(timezone=True), nullable=True)
+    dealer_reject_reason = Column(Text, nullable=True)
+
     boqs = relationship("Boq", back_populates="lead")
     design_requests = relationship("DesignRequest", back_populates="lead")
 
@@ -145,6 +192,15 @@ class Boq(Base):
     created_by = Column(String(255))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     approved_at = Column(DateTime(timezone=True))
+    # ── CRM upgrade: discount approval matrix ──
+    max_discount_pct = Column(Numeric(5, 2), nullable=True)
+    approval_level = Column(String(30), nullable=True)          # auto / regional_manager / national_head / ceo
+    approval_status = Column(String(20), nullable=True)         # not_required / pending / approved / rejected
+    approval_requested_at = Column(DateTime(timezone=True), nullable=True)
+    approval_requested_by = Column(String(255), nullable=True)
+    approval_decided_at = Column(DateTime(timezone=True), nullable=True)
+    approval_decided_by = Column(String(255), nullable=True)
+    approval_notes = Column(Text, nullable=True)
 
     lead = relationship("Lead", back_populates="boqs")
     line_items = relationship("BoqLineItem", back_populates="boq")
@@ -186,6 +242,11 @@ class DesignRequest(Base):
     notes = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True))
+    # ── CRM upgrade: technical support turnaround ──
+    requested_by = Column(String(255), nullable=True)
+    target_date = Column(DateTime(timezone=True), nullable=True)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    revision_count = Column(Integer, default=0)
 
     lead = relationship("Lead", back_populates="design_requests")
     boq = relationship("Boq", back_populates="design_requests")
@@ -381,6 +442,12 @@ class ProjectTracking(Base):
     expected_delivery = Column(DateTime, nullable=True)
     actual_delivery = Column(DateTime, nullable=True)
     delivery_notes = Column(Text, nullable=True)
+    # ── CRM upgrade: installation sign-off ──
+    commissioning_date = Column(DateTime, nullable=True)
+    client_training_date = Column(DateTime, nullable=True)
+    signoff_date = Column(DateTime, nullable=True)
+    signed_off_by = Column(String(255), nullable=True)
+    signoff_doc_url = Column(Text, nullable=True)
     updated_at = Column(DateTime, nullable=True)
 
 class ProjectSnag(Base):
@@ -484,3 +551,145 @@ class Task(Base):
 
     employee = relationship("Employee", back_populates="tasks")
     lead = relationship("Lead", foreign_keys=[linked_lead_id])
+
+
+# ============================================================
+# CRM UPGRADE — architects, activities, after-sales, targets
+# ============================================================
+
+class Architect(Base):
+    """Architects, interior designers, PMCs and builders — the influence channel."""
+    __tablename__ = "architects"
+
+    architect_id = Column(Integer, primary_key=True, index=True)
+    partner_type = Column(String(30), default="architect")      # architect / interior_designer / pmc / builder
+    firm_name = Column(String(255), nullable=False)
+    principal_name = Column(String(255), nullable=True)
+    phone = Column(String(30), nullable=True)
+    email = Column(String(255), nullable=True)
+    city = Column(String(100), nullable=True)
+    state = Column(String(100), nullable=True)
+    address = Column(Text, nullable=True)
+    instagram = Column(String(255), nullable=True)
+    segment = Column(String(50), nullable=True)                 # luxury_residential / hospitality / commercial / healthcare
+    ranking = Column(String(3), nullable=True)                  # A+ / A / B / C
+    annual_project_volume = Column(Integer, nullable=True)
+    relationship_owner_id = Column(Integer, ForeignKey("employees.employee_id"), nullable=True)
+    last_meeting_date = Column(DateTime(timezone=True), nullable=True)
+    next_followup_date = Column(Date, nullable=True)
+    notes = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CrmActivity(Base):
+    """Every touch — call, meeting, site visit, note, stage change — on a lead, architect or dealer."""
+    __tablename__ = "crm_activities"
+
+    activity_id = Column(Integer, primary_key=True, index=True)
+    lead_id = Column(Integer, ForeignKey("leads.lead_id", ondelete="CASCADE"), nullable=True, index=True)
+    architect_id = Column(Integer, ForeignKey("architects.architect_id", ondelete="CASCADE"), nullable=True, index=True)
+    dealer_id = Column(Integer, ForeignKey("dealers.dealer_id", ondelete="CASCADE"), nullable=True, index=True)
+    activity_type = Column(String(30), nullable=False)
+    # call / whatsapp / email / meeting / video_meeting / site_visit / architect_meeting /
+    # dealer_meeting / event / note / stage_change / system
+    subject = Column(String(255), nullable=True)
+    notes = Column(Text, nullable=True)
+    outcome = Column(String(50), nullable=True)                 # positive / neutral / negative / no_response
+    employee_id = Column(Integer, ForeignKey("employees.employee_id"), nullable=True)
+    performed_by = Column(String(255), nullable=True)
+    activity_at = Column(DateTime(timezone=True), server_default=func.now())
+    next_followup_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ServiceTicket(Base):
+    """Complaints, warranty claims, service and AMC visits."""
+    __tablename__ = "service_tickets"
+
+    ticket_id = Column(Integer, primary_key=True, index=True)
+    ticket_code = Column(String(30), unique=True)               # SRV-2627-001
+    lead_id = Column(Integer, ForeignKey("leads.lead_id"), nullable=True)
+    dealer_id = Column(Integer, ForeignKey("dealers.dealer_id"), nullable=True)
+    amc_id = Column(Integer, ForeignKey("amc_contracts.amc_id"), nullable=True)
+    customer_name = Column(String(255), nullable=True)
+    customer_phone = Column(String(30), nullable=True)
+    ticket_type = Column(String(30), default="complaint")      # complaint / warranty_claim / service_visit / amc_visit / installation_issue
+    product_sku = Column(String(100), nullable=True)
+    product_name = Column(String(255), nullable=True)
+    issue = Column(Text, nullable=True)
+    priority = Column(String(5), default="P2")                  # P1 (24h) / P2 (72h) / P3 (7d)
+    status = Column(String(30), default="open")                 # open / assigned / in_progress / awaiting_parts / resolved / closed
+    assigned_to = Column(String(255), nullable=True)
+    under_warranty = Column(Boolean, nullable=True)
+    sla_due_at = Column(DateTime(timezone=True), nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    resolution = Column(Text, nullable=True)
+    cost = Column(Numeric(12, 2), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class WarrantyRecord(Base):
+    """Installed-base registry: every product linked to project, dealer, customer and install date."""
+    __tablename__ = "warranty_records"
+
+    warranty_id = Column(Integer, primary_key=True, index=True)
+    lead_id = Column(Integer, ForeignKey("leads.lead_id", ondelete="CASCADE"), index=True)
+    dealer_id = Column(Integer, ForeignKey("dealers.dealer_id"), nullable=True)
+    product_sku = Column(String(100), nullable=True)
+    product_name = Column(String(255), nullable=True)
+    category = Column(String(50), nullable=True)
+    quantity = Column(Integer, default=1)
+    serial_numbers = Column(Text, nullable=True)
+    install_date = Column(Date, nullable=True)
+    warranty_months = Column(Integer, default=24)
+    warranty_end = Column(Date, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class AmcContract(Base):
+    __tablename__ = "amc_contracts"
+
+    amc_id = Column(Integer, primary_key=True, index=True)
+    amc_code = Column(String(30), unique=True)                  # AMC-2627-001
+    lead_id = Column(Integer, ForeignKey("leads.lead_id"), nullable=True)
+    dealer_id = Column(Integer, ForeignKey("dealers.dealer_id"), nullable=True)
+    customer_name = Column(String(255), nullable=True)
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)
+    visits_per_year = Column(Integer, default=2)
+    contract_value = Column(Numeric(12, 2), nullable=True)
+    last_visit_date = Column(Date, nullable=True)
+    next_visit_date = Column(Date, nullable=True)
+    status = Column(String(20), default="active")               # active / expired / cancelled
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class EmployeeTarget(Base):
+    """Monthly KPI targets per employee (month = 'YYYY-MM')."""
+    __tablename__ = "employee_targets"
+
+    target_id = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(Integer, ForeignKey("employees.employee_id", ondelete="CASCADE"), index=True)
+    month = Column(String(7), nullable=False)
+    architect_meetings = Column(Integer, nullable=True)
+    dealer_meetings = Column(Integer, nullable=True)
+    new_architects = Column(Integer, nullable=True)
+    new_dealers = Column(Integer, nullable=True)
+    leads_generated = Column(Integer, nullable=True)
+    site_visits = Column(Integer, nullable=True)
+    revenue = Column(Numeric(14, 2), nullable=True)
+    collections = Column(Numeric(14, 2), nullable=True)
+
+
+class MarketingSpend(Base):
+    """Monthly spend per lead source, for cost-per-lead and marketing ROI."""
+    __tablename__ = "marketing_spend"
+
+    spend_id = Column(Integer, primary_key=True, index=True)
+    month = Column(String(7), nullable=False)                   # YYYY-MM
+    source = Column(String(50), nullable=False)                 # meta_ads / google_ads / exhibition / ...
+    amount = Column(Numeric(12, 2), nullable=False)
+    notes = Column(Text, nullable=True)

@@ -7,9 +7,24 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+import os
+import traceback
+from fastapi import Request
 from app.database import get_db
 from app import models, schemas
+from app import crm_logic as L
+from app.crm_common import rescore, log_activity, user_name
 from app.drive import create_lead_folder_structure
+
+# "No stage movement without an activity log" — set CRM_REQUIRE_ACTIVITY=0 to relax
+REQUIRE_ACTIVITY = os.getenv("CRM_REQUIRE_ACTIVITY", "1") != "0"
+RECENT_ACTIVITY_DAYS = 7
+CRM_FIELDS = [
+    "attribution_type", "owner_employee_id", "source_employee_id", "architect_id", "builder_name",
+    "state", "pincode", "project_location", "budget_range", "property_type", "property_size_sqft",
+    "construction_stage", "expected_possession_date", "purchase_timeline", "product_interest",
+    "estimated_value", "expected_order_date",
+]
 
 router = APIRouter()
 
@@ -18,41 +33,23 @@ router = APIRouter()
 # HELPERS
 # =========================================
 def generate_lead_code(db: Session) -> str:
-    year = datetime.now().year
-    short_year = str(year)[2:]
-    next_year_short = str(year + 1)[2:]
-    prefix = f"LD-{short_year}{next_year_short}"
-
-    last = db.query(models.Lead).filter(models.Lead.lead_code.like(f"{prefix}-%")).order_by(models.Lead.lead_code.desc()).first()
-    last_num = 0
-    if last and last.lead_code:
-        try: last_num = int(last.lead_code.split("-")[-1])
-        except: pass
-    number = str(last_num + 1).zfill(3)
-    return f"{prefix}-{number}"
+    # Indian FY prefix (LD-2627-…) and numeric MAX, never COUNT
+    from app.crm_common import next_code
+    return next_code(db, models.Lead, "lead_code", "LD")
 
 
 def generate_boq_code(db: Session) -> str:
-    year = datetime.now().year
-    short_year = str(year)[2:]
-    next_year_short = str(year + 1)[2:]
-    prefix = f"BOQ-{short_year}{next_year_short}"
-
-    from sqlalchemy import func
-    max_id = db.query(func.max(models.Boq.boq_id)).scalar() or 0
-    number = str(max_id + 1).zfill(3)
-    return f"{prefix}-{number}"
+    # Same MAX-of-code rule as boqs.py so the two paths can never collide
+    from app.crm_common import next_code
+    db.flush()
+    return next_code(db, models.Boq, "boq_code", "BOQ")
 
 
 def generate_design_code(db: Session) -> str:
-    year = datetime.now().year
-    short_year = str(year)[2:]
-    next_year_short = str(year + 1)[2:]
-    prefix = f"DSG-{short_year}{next_year_short}"
-
-    count = db.query(models.DesignRequest).count()
-    number = str(count + 1).zfill(3)
-    return f"{prefix}-{number}"
+    # MAX-based (COUNT produced duplicate codes once requests were deleted)
+    from app.crm_common import next_code
+    db.flush()
+    return next_code(db, models.DesignRequest, "design_code", "DSG")
 
 
 # =========================================
@@ -93,6 +90,12 @@ def list_leads(
         boq_value = float(boq_totals.get(lead.lead_id, 0) or 0)
         d = {c.name: getattr(lead, c.name) for c in lead.__table__.columns}
         d["boq_value"] = boq_value
+        sla = L.sla_state(lead)
+        d["sla_overdue"] = bool(sla and sla["overdue"])
+        d["sla_level"] = sla["level"] if sla else 0
+        d["idle_days"] = sla["idle_days"] if sla else None
+        d["probability"] = L.lead_probability(lead)
+        d["dealer_acceptance_overdue"] = L.dealer_acceptance_overdue(lead)
         result.append(d)
     return result
 
@@ -129,9 +132,30 @@ def create_lead(payload: schemas.LeadCreate, db: Session = Depends(get_db)):
         client_address=payload.client_address,
         status="new",
     )
+    for f in CRM_FIELDS:
+        v = getattr(payload, f, None)
+        if v not in (None, "", []):
+            setattr(lead, f, v)
+    if lead.owner_employee_id and not lead.assigned_to:
+        emp = db.query(models.Employee).filter(models.Employee.employee_id == lead.owner_employee_id).first()
+        if emp:
+            lead.assigned_to = emp.name
+    if not lead.attribution_type:
+        lead.attribution_type = "dealer" if payload.dealer_id and payload.lead_source in ("dealer", "dealer_generated") else (
+            "employee" if lead.source_employee_id else "company")
+    if lead.dealer_id:
+        lead.dealer_assigned_at = L.now_utc()
+        lead.dealer_acceptance = "accepted" if lead.attribution_type == "dealer" else "pending"
+    lead.last_activity_at = L.now_utc()
+    lead.status_changed_at = L.now_utc()
+    rescore(db, lead)
+    if lead.lead_grade:
+        lead.qualified_at = L.now_utc()
 
     db.add(lead)
     db.flush()  # get lead_id before commit
+    log_activity(db, lead_id=lead.lead_id, activity_type="system", subject="Lead created",
+                 notes=payload.remarks, performed_by=payload.assigned_to, touch=False)
 
     # Create Google Drive folder in background (non-blocking)
     import threading
@@ -212,15 +236,39 @@ def create_lead(payload: schemas.LeadCreate, db: Session = Depends(get_db)):
 def update_lead_status(
     lead_id: int,
     payload: schemas.LeadStatusUpdate,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     lead = db.query(models.Lead).filter(models.Lead.lead_id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
+    old_status = lead.status
+    note = (payload.note or "").strip()
+    if payload.status != old_status:
+        recent = False
+        if lead.last_activity_at:
+            recent = (L.now_utc() - L._aware(lead.last_activity_at)).days < RECENT_ACTIVITY_DAYS
+        if REQUIRE_ACTIVITY and not recent and not note:
+            raise HTTPException(status_code=422, detail={
+                "code": "activity_required",
+                "message": f"No activity logged in the last {RECENT_ACTIVITY_DAYS} days. Add a note on what happened before moving this lead.",
+            })
+        if payload.status in ("lost", "cold") and not (payload.lost_reason or lead.lost_reason or note):
+            raise HTTPException(status_code=422, detail={"code": "reason_required", "message": "Give a reason for losing this lead."})
+
     lead.status = payload.status
     if payload.lost_reason:
         lead.lost_reason = payload.lost_reason
+    if payload.status != old_status:
+        lead.status_changed_at = L.now_utc()
+        if payload.status == "qualified" and not lead.qualified_at:
+            lead.qualified_at = L.now_utc()
+        who = payload.performed_by or user_name(request)
+        # A stage move with a note counts as a touch (resets the follow-up clock); a bare move doesn't
+        log_activity(db, lead_id=lead.lead_id, activity_type="stage_change",
+                     subject=f"{old_status.replace('_', ' ')} → {payload.status.replace('_', ' ')}",
+                     notes=note or payload.lost_reason, performed_by=who, touch=bool(note))
 
     db.commit()
     db.refresh(lead)
@@ -233,9 +281,12 @@ def update_lead(lead_id: int, payload: schemas.LeadCreate, db: Session = Depends
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
+    old_dealer = lead.dealer_id
     for field, value in payload.dict(exclude_unset=True).items():
         if field in ['arch_lighting', 'decorative_lighting', 'automation', 'exterior_lighting', 'mechanical_switches', 'smart_locks', 'design_required']:
             continue
+        if field == 'status':
+            continue  # status changes go through PATCH /leads/{id}/status
         if field == 'created_at' and value:
             from datetime import datetime
             setattr(lead, field, datetime.fromisoformat(value))
@@ -243,6 +294,14 @@ def update_lead(lead_id: int, payload: schemas.LeadCreate, db: Session = Depends
         if hasattr(lead, field):
             setattr(lead, field, value)
 
+    if lead.dealer_id != old_dealer:
+        if lead.dealer_id:
+            lead.dealer_assigned_at = L.now_utc()
+            lead.dealer_acceptance = "pending"
+            lead.dealer_responded_at = None
+        else:
+            lead.dealer_acceptance = None
+    rescore(db, lead)
     try:
         db.commit()
         db.refresh(lead)

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, date
 
 from app.database import get_db
 from app import models
@@ -17,6 +17,19 @@ class DealerCreate(BaseModel):
     email: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
+    region: Optional[str] = None
+    classification: Optional[str] = None
+    lifecycle_stage: Optional[str] = None
+    certified_categories: Optional[List[str]] = None
+    capabilities: Optional[List[str]] = None
+    territory_cities: Optional[List[str]] = None
+    training_score: Optional[int] = None
+    installation_score: Optional[int] = None
+    service_score: Optional[int] = None
+    agreement_start: Optional[date] = None
+    agreement_end: Optional[date] = None
+    crm_notes: Optional[str] = None
+    gstin: Optional[str] = None
 
 
 class DealerUpdate(BaseModel):
@@ -27,6 +40,19 @@ class DealerUpdate(BaseModel):
     city: Optional[str] = None
     state: Optional[str] = None
     status: Optional[str] = None
+    region: Optional[str] = None
+    classification: Optional[str] = None
+    lifecycle_stage: Optional[str] = None
+    certified_categories: Optional[List[str]] = None
+    capabilities: Optional[List[str]] = None
+    territory_cities: Optional[List[str]] = None
+    training_score: Optional[int] = None
+    installation_score: Optional[int] = None
+    service_score: Optional[int] = None
+    agreement_start: Optional[date] = None
+    agreement_end: Optional[date] = None
+    crm_notes: Optional[str] = None
+    gstin: Optional[str] = None
 
 
 class DealerResponse(BaseModel):
@@ -37,8 +63,21 @@ class DealerResponse(BaseModel):
     email: Optional[str]
     city: Optional[str]
     state: Optional[str]
-    status: str
-    created_at: datetime
+    status: Optional[str] = None
+    created_at: Optional[datetime] = None
+    region: Optional[str] = None
+    classification: Optional[str] = None
+    lifecycle_stage: Optional[str] = None
+    certified_categories: Optional[List[str]] = None
+    capabilities: Optional[List[str]] = None
+    territory_cities: Optional[List[str]] = None
+    training_score: Optional[int] = None
+    installation_score: Optional[int] = None
+    service_score: Optional[int] = None
+    agreement_start: Optional[date] = None
+    agreement_end: Optional[date] = None
+    crm_notes: Optional[str] = None
+    gstin: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -68,6 +107,13 @@ def create_dealer(payload: DealerCreate, db: Session = Depends(get_db)):
         state=payload.state,
         status="active",
     )
+    for f in DealerCreate.__fields__:
+        if f not in ("firm_name", "contact_person", "phone", "email", "city", "state"):
+            v = getattr(payload, f, None)
+            if v is not None:
+                setattr(dealer, f, v)
+    if not dealer.lifecycle_stage:
+        dealer.lifecycle_stage = "active"
     db.add(dealer)
     db.commit()
     db.refresh(dealer)

@@ -67,11 +67,9 @@ def create_boq(payload: schemas.BoqCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Lead not found")
 
     # Generate BOQ code
-    year = datetime.now().year
-    short_year = str(year)[2:]
-    next_year_short = str(year + 1)[2:]
-    count = db.query(models.Boq).count()
-    boq_code = f"BOQ-{short_year}{next_year_short}-{str(count + 1).zfill(3)}"
+    # MAX-based within the FY prefix — COUNT produced duplicate codes after deletes
+    from app.crm_common import next_code
+    boq_code = next_code(db, models.Boq, "boq_code", "BOQ")
 
     # Check version — if BOQ exists for this lead+category, increment
     existing = db.query(models.Boq).filter(
@@ -179,6 +177,15 @@ def update_boq_status(
     boq = db.query(models.Boq).filter(models.Boq.boq_id == boq_id).first()
     if not boq:
         raise HTTPException(status_code=404, detail="BOQ not found")
+
+    # Discount approval gate — set CRM_ENFORCE_DISCOUNT_APPROVAL=0 on Railway to switch off
+    import os
+    if os.getenv("CRM_ENFORCE_DISCOUNT_APPROVAL", "1") != "0" and payload.status in ("sent", "approved") and boq.status != payload.status:
+        from app.routers.crm import boq_send_blocker
+        blocker = boq_send_blocker(db, boq)
+        if blocker:
+            db.commit()  # persist the evaluated approval level
+            raise HTTPException(status_code=422, detail={"code": "approval_required", "message": blocker})
 
     boq.status = payload.status
 

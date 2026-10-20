@@ -64,12 +64,11 @@ def create_design_request(
         if not boq:
             raise HTTPException(status_code=404, detail="BOQ not found")
 
-    # Generate design code
-    year = datetime.now().year
-    short_year = str(year)[2:]
-    next_year_short = str(year + 1)[2:]
-    count = db.query(models.DesignRequest).count()
-    design_code = f"DSG-{short_year}{next_year_short}-{str(count + 1).zfill(3)}"
+    # Generate design code (MAX-based — COUNT produces duplicates after deletes)
+    from app.crm_common import next_code
+    from app import crm_logic as L
+    from datetime import timedelta
+    design_code = next_code(db, models.DesignRequest, "design_code", "DSG")
 
     dr = models.DesignRequest(
         design_code=design_code,
@@ -79,6 +78,7 @@ def create_design_request(
         status="pending",
         assigned_to=payload.assigned_to,
         notes=payload.notes,
+        target_date=L.now_utc() + timedelta(days=L.TECH_REQUEST_DEFAULT_DAYS.get(payload.request_type, 5)),
     )
 
     db.add(dr)
@@ -103,6 +103,11 @@ def update_design_request_status(
     if not dr:
         raise HTTPException(status_code=404, detail="Design request not found")
 
+    prev_status = dr.status
+    if payload.status == "in_progress" and not dr.started_at:
+        dr.started_at = datetime.now()
+    if payload.status in ("in_progress", "pending") and prev_status in ("completed", "approved"):
+        dr.revision_count = (dr.revision_count or 0) + 1  # sent back for revision
     dr.status = payload.status
 
     if payload.drive_output_url:

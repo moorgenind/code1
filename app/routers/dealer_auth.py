@@ -104,6 +104,8 @@ def get_dealer_leads(token: str, db: Session = Depends(get_db)):
     
     result = []
     for lead in leads:
+        if lead.dealer_acceptance == "rejected":
+            continue
         boqs = db.query(models.Boq).filter(models.Boq.lead_id == lead.lead_id).all()
         boq_value = sum(float(b.total_amount or 0) for b in boqs)
         result.append({
@@ -119,6 +121,10 @@ def get_dealer_leads(token: str, db: Session = Depends(get_db)):
             "lock_expires_at": lead.lock_expires_at.isoformat() if lead.lock_expires_at else None,
             "created_at": lead.created_at.isoformat() if lead.created_at else None,
             "dealer_notes": lead.dealer_notes,
+            "acceptance": lead.dealer_acceptance,
+            "assigned_at": lead.dealer_assigned_at.isoformat() if lead.dealer_assigned_at else None,
+            "assignment_reason": lead.dealer_assignment_reason,
+            "client_phone": lead.client_phone if lead.dealer_acceptance != "pending" else None,
         })
     return result
 
@@ -136,12 +142,26 @@ def create_dealer_lead(body: dict, db: Session = Depends(get_db)):
     if lock_check["locked"]:
         raise HTTPException(status_code=409, detail=f"This project is already registered by {lock_check['locked_by']}. Lock expires {lock_check['expires_at'][:10]}.")
     
-    # Generate lead code
-    from datetime import date
-    fy = "2526" if date.today().month >= 4 else "2425"
-    count = db.query(models.Lead).count()
-    lead_code = f"LD-{fy}-{str(count+1).zfill(3)}"
-    
+    # Duplicate check across ALL leads (phone / name+city), not just other dealers' locks
+    from app.routers.crm import find_duplicates
+    dups = find_duplicates(db, phone=body.get("client_phone"), client_name=client_name,
+                           project_name=project_name, city=city)
+    dups = [d for d in dups if d["reason"] == "Same client phone" or d["locked"]]
+    if dups and not body.get("confirm_duplicate"):
+        raise HTTPException(status_code=409, detail=f"Possible duplicate of {dups[0]['lead_code']} ({dups[0]['reason']}). Contact Moorgen India if this is a different project.")
+
+    # Generate lead code (FY-correct, MAX-based — the old COUNT/hard-coded FY produced duplicates)
+    from app.routers.leads import generate_lead_code
+    from app.crm_common import rescore, log_activity
+    from app import crm_logic as L
+    lead_code = generate_lead_code(db)
+
+    def _num(v):
+        try:
+            return float(v) if v not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
     lead = models.Lead(
         lead_code=lead_code,
         project_name=project_name,
@@ -156,8 +176,34 @@ def create_dealer_lead(body: dict, db: Session = Depends(get_db)):
         locked_by_dealer_id=dealer.dealer_id,
         locked_at=datetime.now(),
         lock_expires_at=datetime.now() + timedelta(days=180),
+        client_phone=body.get("client_phone") or None,
+        builder_name=body.get("builder_name") or None,
+        property_type=body.get("property_type") or None,
+        property_size_sqft=int(_num(body.get("property_size_sqft")) or 0) or None,
+        construction_stage=body.get("construction_stage") or None,
+        estimated_value=_num(body.get("estimated_value")),
+        expected_order_date=body.get("expected_order_date") or None,
+        product_interest=body.get("product_interest") or None,
+        attribution_type="dealer",
+        lead_source="dealer_generated",
+        dealer_acceptance="accepted",
+        dealer_assigned_at=datetime.now(),
+        last_activity_at=datetime.now(),
+        status_changed_at=datetime.now(),
     )
+    arch_name = (body.get("architect_name") or "").strip()
+    if arch_name:
+        arch = db.query(models.Architect).filter(models.Architect.firm_name.ilike(arch_name)).first()
+        if arch:
+            lead.architect_id = arch.architect_id
+        else:
+            lead.dealer_notes = ((lead.dealer_notes or "") + f"\nArchitect: {arch_name}").strip()
+    rescore(db, lead)
     db.add(lead)
+    db.flush()
+    log_activity(db, lead_id=lead.lead_id, dealer_id=dealer.dealer_id, activity_type="system",
+                 subject=f"Project registered by {dealer.firm_name} (6-month protection)",
+                 notes=body.get("notes"), performed_by=dealer.firm_name, touch=False)
     db.commit()
     db.refresh(lead)
     return {"lead_id": lead.lead_id, "lead_code": lead.lead_code, "message": "Lead created and locked for 6 months"}
@@ -203,9 +249,42 @@ def update_lead_status(lead_id: int, body: dict = Body(...), db: Session = Depen
     lead = db.query(models.Lead).filter(models.Lead.lead_id == lead_id, models.Lead.dealer_id == dealer.dealer_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
-    lead.status = body.get("status", lead.status)
+    from app.crm_common import log_activity
+    from app import crm_logic as L
+    new_status = body.get("status", lead.status)
+    if new_status != lead.status:
+        log_activity(db, lead_id=lead.lead_id, dealer_id=dealer.dealer_id, activity_type="stage_change",
+                     subject=f"{lead.status} → {new_status} (dealer)", notes=body.get("note"),
+                     performed_by=dealer.firm_name, touch=bool(body.get("note")))
+        lead.status_changed_at = L.now_utc()
+    lead.status = new_status
     db.commit()
     return {"ok": True}
+
+
+@router.post("/leads/{lead_id}/respond")
+def respond_to_assignment(lead_id: int, body: dict = Body(...), db: Session = Depends(get_db)):
+    """Dealer accepts or rejects an assigned lead (24-hour SLA)."""
+    from app.crm_common import log_activity
+    from app import crm_logic as L
+    dealer = get_dealer(body.get("token", ""), db)
+    lead = db.query(models.Lead).filter(models.Lead.lead_id == lead_id, models.Lead.dealer_id == dealer.dealer_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    decision = body.get("decision")
+    if decision not in ("accepted", "rejected"):
+        raise HTTPException(status_code=422, detail="decision must be 'accepted' or 'rejected'")
+    if decision == "rejected" and not (body.get("reason") or "").strip():
+        raise HTTPException(status_code=422, detail="Please give a reason for rejecting")
+    lead.dealer_acceptance = decision
+    lead.dealer_responded_at = L.now_utc()
+    if decision == "rejected":
+        lead.dealer_reject_reason = body.get("reason")  # stays on the dealer for the scorecard; HQ reassigns
+    log_activity(db, lead_id=lead.lead_id, dealer_id=dealer.dealer_id, activity_type="system",
+                 subject=f"{dealer.firm_name} {decision} the lead", notes=body.get("reason"),
+                 performed_by=dealer.firm_name, touch=False)
+    db.commit()
+    return {"ok": True, "acceptance": decision}
 
 @router.patch("/leads/{lead_id}/notes")
 def update_lead_notes(lead_id: int, body: dict = Body(...), db: Session = Depends(get_db)):
