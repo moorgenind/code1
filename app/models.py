@@ -703,7 +703,7 @@ from sqlalchemy import event as _event, text as _text, inspect as _inspect
 def _lookup_list_price(connection, sku, fallback):
     sku = sku or ""
     row = connection.execute(
-        _text("SELECT mrp_inr FROM products WHERE sku IN (:a, :b) AND mrp_inr IS NOT NULL LIMIT 1"),
+        _text("SELECT COALESCE(mrp_inr, mrp_gst) FROM products WHERE sku IN (:a, :b) AND COALESCE(mrp_inr, mrp_gst) IS NOT NULL LIMIT 1"),
         {"a": sku, "b": _re.sub(r"^(DEC|ARCH)-", "", sku)},
     ).first()
     return row[0] if row else fallback
