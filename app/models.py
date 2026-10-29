@@ -222,6 +222,7 @@ class BoqLineItem(Base):
     line_total = Column(Numeric(12, 2))
     notes = Column(Text)
     image_url = Column(Text, nullable=True)
+    list_price = Column(Numeric(12, 2), nullable=True)  # MRP snapshot at quote time
 
     boq = relationship("Boq", back_populates="line_items")
 
@@ -693,3 +694,26 @@ class MarketingSpend(Base):
     source = Column(String(50), nullable=False)                 # meta_ads / google_ads / exhibition / ...
     amount = Column(Numeric(12, 2), nullable=False)
     notes = Column(Text, nullable=True)
+
+
+# ── list price snapshot for BOQ lines ──
+import re as _re
+from sqlalchemy import event as _event, text as _text, inspect as _inspect
+
+def _lookup_list_price(connection, sku, fallback):
+    sku = sku or ""
+    row = connection.execute(
+        _text("SELECT mrp_inr FROM products WHERE sku IN (:a, :b) AND mrp_inr IS NOT NULL LIMIT 1"),
+        {"a": sku, "b": _re.sub(r"^(DEC|ARCH)-", "", sku)},
+    ).first()
+    return row[0] if row else fallback
+
+@_event.listens_for(BoqLineItem, "before_insert")
+def _boq_line_set_list_price(mapper, connection, target):
+    if target.list_price is None:
+        target.list_price = _lookup_list_price(connection, target.product_sku, target.unit_price)
+
+@_event.listens_for(BoqLineItem, "before_update")
+def _boq_line_refresh_list_price(mapper, connection, target):
+    if _inspect(target).attrs.product_sku.history.has_changes():
+        target.list_price = _lookup_list_price(connection, target.product_sku, target.unit_price)
